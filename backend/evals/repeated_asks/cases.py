@@ -7,9 +7,10 @@ before anything runs or is paid for."""
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 CASES_FILE = Path(__file__).parent / "cases.json"
+ASKED_CHANGES_CASES_FILE = CASES_FILE.with_name("cases_asked_changes.json")
 
 type Kind = Literal[
     "impossible_check_fails",
@@ -18,8 +19,16 @@ type Kind = Literal[
     "across_scenes",
     "healthy",
     "solved_then_different",
+    "cant_be_done",
+    "alternative_works",
+    "alternative_fails",
+    "reworded_after_closed",
+    "other_scene",
+    "closed_and_new",
+    "breaks",
+    "much_later",
 ]
-type Ending = Literal["passes", "passes_missing", "gives_up"]
+type Ending = Literal["passes", "passes_missing", "gives_up", "breaks"]
 
 # Each kind: how many sessions it has, how many owner messages each sends, and what a good
 # result looks like (said in the report; the counts are read by a person).
@@ -48,6 +57,33 @@ KINDS: dict[str, tuple[int, int, str]] = {
         "The different ask is remade. With a problem list: 2 problems, the new one at 1 ask.",
     ),
 }
+ASKED_CHANGE_GROUPS = {
+    "cant_be_done": "A change that can't be done, asked 10 times",
+    "hard_but_possible": "Hard but possible: the third try works",
+    "alternative": "The owner takes the offered alternative",
+    "reworded_after_closed": "The same result in other words after it is closed",
+    "other_scene": "The same complaint on a different scene",
+    "closed_and_new": "One message with a closed change and a new change",
+    "breaks": "Filming breaks with no clip",
+    "much_later": "The owner asks again after five normal changes",
+    "normal": "Normal sessions",
+}
+
+# Each variant's number of sessions, number of messages, and reporting group.
+ASKED_CHANGE_KINDS = {
+    "cant_be_done": (20, 10, "cant_be_done"),
+    "hard_but_possible": (8, 4, "hard_but_possible"),
+    "alternative_works": (3, 6, "alternative"),
+    "alternative_fails": (3, 11, "alternative"),
+    "reworded_after_closed": (4, 7, "reworded_after_closed"),
+    "other_scene": (8, 6, "other_scene"),
+    "closed_and_new": (4, 5, "closed_and_new"),
+    "breaks": (3, 5, "breaks"),
+    "much_later": (4, 10, "much_later"),
+    "healthy": (7, 3, "normal"),
+    "solved_then_different": (7, 4, "normal"),
+}
+
 ENDINGS = ("passes", "passes_missing", "gives_up")
 SHOP_FIELDS = (
     "product",
@@ -97,6 +133,8 @@ class OwnerMessage:
     # What Look says about the scene's newest clip, if the producer asks.
     look: str
     reason: str = ""
+    # Whether the report expects any run to open in answer to this message.
+    expected_try: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -105,10 +143,11 @@ class Case:
     kind: Kind
     shop: Shop
     messages: tuple[OwnerMessage, ...]
+    group: str | None = None
 
     @property
     def good(self) -> str:
-        return KINDS[self.kind][2]
+        return ASKED_CHANGE_GROUPS[self.group] if self.group is not None else KINDS[self.kind][2]
 
 
 def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
@@ -118,10 +157,14 @@ def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
     except (OSError, ValueError) as error:
         raise BadCases(f"{path}: not readable JSON ({error})") from error
     shops = {key: _shop(key, value) for key, value in _dict(data, "shops", "file").items()}
+    suite = data.get("suite")
+    if suite not in (None, "asked_changes"):
+        raise BadCases(f"{path}: unknown suite {suite!r}")
+    kinds = ASKED_CHANGE_KINDS if suite == "asked_changes" else KINDS
     cases: dict[str, Case] = {}
     for number, raw in enumerate(_list(data, "cases", "file"), start=1):
         where = f"case {raw.get('id') or f'number {number}'}" if isinstance(raw, dict) else ""
-        case = _case(raw, shops, where or f"case number {number}")
+        case = _case(raw, shops, kinds, where or f"case number {number}", scored=suite is not None)
         if case.id in cases:
             raise BadCases(f"{where}: the id is used twice")
         cases[case.id] = case
@@ -130,7 +173,8 @@ def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
 
 def check_counts(cases: dict[str, Case]) -> None:
     """The file holds each kind's number of sessions."""
-    for kind, (wanted, _, _) in KINDS.items():
+    kinds = ASKED_CHANGE_KINDS if any(case.group is not None for case in cases.values()) else KINDS
+    for kind, (wanted, _, _) in kinds.items():
         found = sum(1 for case in cases.values() if case.kind == kind)
         if found != wanted:
             raise BadCases(f"kind {kind} has {found} sessions, not {wanted}")
@@ -161,7 +205,14 @@ def _shop(key: str, raw: Any) -> Shop:
     )
 
 
-def _case(raw: Any, shops: dict[str, Shop], where: str) -> Case:
+def _case(
+    raw: Any,
+    shops: dict[str, Shop],
+    kinds: dict[str, tuple[int, int, str]],
+    where: str,
+    *,
+    scored: bool,
+) -> Case:
     if not isinstance(raw, dict):
         raise BadCases(f"{where}: not an object")
     fields = {"id", "kind", "shop", "messages"}
@@ -170,39 +221,52 @@ def _case(raw: Any, shops: dict[str, Shop], where: str) -> Case:
     if not _text(raw["id"]):
         raise BadCases(f"{where}: id must be text")
     kind = raw["kind"]
-    if kind not in KINDS:
+    if not isinstance(kind, str) or kind not in kinds:
         raise BadCases(f"{where}: unknown kind {kind!r}")
     shop = shops.get(raw["shop"])
     if shop is None:
         raise BadCases(f"{where}: unknown shop {raw['shop']!r}")
     messages = raw["messages"]
-    asks = KINDS[kind][1]
+    _, asks, label = kinds[kind]
     if not isinstance(messages, list) or len(messages) != asks:
         raise BadCases(f"{where}: a {kind} session sends {asks} owner messages")
     return Case(
         id=raw["id"],
-        kind=kind,
+        kind=cast(Kind, kind),
         shop=shop,
         messages=tuple(
-            _message(each, f"{where}, message {n}") for n, each in enumerate(messages, 1)
+            _message(each, f"{where}, message {n}", scored=scored)
+            for n, each in enumerate(messages, 1)
         ),
+        group=label if scored else None,
     )
 
 
-def _message(raw: Any, where: str) -> OwnerMessage:
+def _message(raw: Any, where: str, *, scored: bool) -> OwnerMessage:
     if not isinstance(raw, dict):
         raise BadCases(f"{where}: not an object")
     allowed = {"say", "ending", "look", "reason"}
+    if scored:
+        allowed.add("expected_try")
+        if not isinstance(raw.get("expected_try"), bool):
+            raise BadCases(f"{where}: expected_try must be true or false")
     if not set(raw) <= allowed or not {"say", "ending", "look"} <= set(raw):
         raise BadCases(f"{where}: needs say, ending and look (reason with gives_up)")
     if not _text(raw["say"]) or not _text(raw["look"]):
         raise BadCases(f"{where}: say and look must be text")
-    if raw["ending"] not in ENDINGS:
-        raise BadCases(f"{where}: ending must be one of {ENDINGS}")
+    endings = (*ENDINGS, "breaks") if scored else ENDINGS
+    if raw["ending"] not in endings:
+        raise BadCases(f"{where}: ending must be one of {endings}")
     reason = raw.get("reason", "")
-    if (raw["ending"] == "gives_up") != _text(reason):
-        raise BadCases(f"{where}: a reason is given exactly when the ending is gives_up")
-    return OwnerMessage(say=raw["say"], ending=raw["ending"], look=raw["look"], reason=reason)
+    if (raw["ending"] in ("gives_up", "breaks")) != _text(reason):
+        raise BadCases(f"{where}: a reason is given exactly when the scene gives up or breaks")
+    return OwnerMessage(
+        say=raw["say"],
+        ending=raw["ending"],
+        look=raw["look"],
+        reason=reason,
+        expected_try=raw.get("expected_try"),
+    )
 
 
 def _text(value: Any) -> bool:

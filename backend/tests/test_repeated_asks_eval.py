@@ -248,3 +248,36 @@ def test_every_shop_in_the_case_file_gets_a_finished_ad(shop: str, playing: Play
 
     assert record["error"] == ""
     assert counts(record)["per_ask"] == [0]
+
+
+def test_the_player_records_the_developer_reason_when_the_producer_is_cut_off(
+    playing: Playing,
+) -> None:
+    message = OwnerMessage("Can you make scene 2 brighter?", "passes", "It looks fine.")
+    record = playing(
+        tiny("impossible-fails-01-brush", message, message),
+        [[RuntimeError("The scripted producer service stopped responding")]],
+    )
+
+    [ask] = record["asks"]
+    assert not record["error"]
+    [reason] = ask["cut_offs"]
+    assert "The scripted producer service stopped responding" in reason
+
+
+def test_the_player_can_script_a_scene_run_that_breaks_without_a_clip(playing: Playing) -> None:
+    message = OwnerMessage(
+        "Can you make scene 2 brighter?",
+        "breaks",
+        "It's still dark.",
+        "The scripted service broke.",
+    )
+    record = playing(
+        tiny("impossible-fails-01-brush", message),
+        [[turn(calls=[note(2, message.say)]), turn(says="On it.")], [turn(says="The step broke.")]],
+    )
+
+    assert not record["error"]
+    [run] = record["asks"][0]["runs"]
+    assert run["clips"] == 0
+    assert "The scripted service broke" in run["ended"]

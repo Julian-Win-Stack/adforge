@@ -1,0 +1,3768 @@
+{
+ "suite": "asked_changes",
+ "shops": {
+  "brush": {
+   "product": "Glide Detangling Brush",
+   "brand": "Tessa Hair",
+   "price": "18.00",
+   "page_text": "Flexible bristles glide through wet or dry hair without pulling.",
+   "colour": "pink",
+   "real_size": "about 22 cm long",
+   "behaviour": "Its flexible bristles bend and part the hair as it is pulled down from root to tip.",
+   "person": "A woman in her twenties with long wavy brown hair, in a bright bathroom.",
+   "lines": [
+    "Meet the Glide Detangling Brush from Tessa Hair, made for knots on wet or dry hair.",
+    "Its flexible bristles glide through wet or dry hair without pulling, every single morning.",
+    "Get your Glide Detangling Brush today for just $18.00 from Tessa Hair, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the brush to the lens",
+    "the brush glides down through long wet hair",
+    "the presenter brushes her hair"
+   ]
+  },
+  "cream": {
+   "product": "Cloud Whip Face Cream",
+   "brand": "Lumen Skin",
+   "price": "32.00",
+   "page_text": "A light whipped cream that melts into skin and leaves no shine.",
+   "colour": "white jar with a gold lid",
+   "real_size": "50 ml jar, about 7 cm wide",
+   "behaviour": "The thick white cream thins and disappears into the skin as it is rubbed in.",
+   "person": "A woman in her thirties with clear skin, in a calm white bathroom.",
+   "lines": [
+    "Meet Cloud Whip Face Cream from Lumen Skin, the light cream for soft skin every day.",
+    "This light whipped cream melts into your skin and leaves no shine at all, morning or night.",
+    "Get your Cloud Whip Face Cream today for just $32.00 from Lumen Skin, and feel the difference."
+   ],
+   "shows": [
+    "the presenter holds up the jar",
+    "fingers rub a dab of cream into a cheek until it disappears",
+    "the presenter pats her face"
+   ]
+  },
+  "floss": {
+   "product": "Mint Ribbon Floss",
+   "brand": "Brightbite",
+   "price": "6.00",
+   "page_text": "A soft mint floss that slides between tight teeth without shredding.",
+   "colour": "mint green case",
+   "real_size": "small round case, about 5 cm wide",
+   "behaviour": "The thin floss bends around each tooth and slides down between tight teeth.",
+   "person": "A man in his twenties with a bright smile, at a bathroom mirror.",
+   "lines": [
+    "Meet Mint Ribbon Floss from Brightbite, the soft floss for a fresh clean smile.",
+    "It slides between tight teeth without shredding, so flossing feels quick and easy every night.",
+    "Get your Mint Ribbon Floss today for just $6.00 from Brightbite, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the floss case to the lens",
+    "a length of floss slides down between two front teeth",
+    "the presenter smiles at the mirror"
+   ]
+  },
+  "bottle": {
+   "product": "Trailmate Bottle",
+   "brand": "Northpeak",
+   "price": "28.00",
+   "page_text": "A steel bottle with a flip handle that keeps water cold for 24 hours.",
+   "colour": "forest green",
+   "real_size": "750 ml, about 26 cm tall",
+   "behaviour": "The flip handle swings up from the lid and stops upright, so the bottle hangs from one finger.",
+   "person": "A woman in her thirties in hiking clothes, at a sunny trailhead.",
+   "lines": [
+    "Meet the Trailmate Bottle from Northpeak, the steel bottle made for long days outside.",
+    "Flip up the handle and carry it on one finger, and your water stays cold for 24 hours.",
+    "Get your Trailmate Bottle today for just $28.00 from Northpeak, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the bottle to the lens",
+    "a finger flips the handle up and lifts the bottle",
+    "the presenter drinks from the bottle"
+   ]
+  },
+  "roller": {
+   "product": "Chill Stone Face Roller",
+   "brand": "Velia",
+   "price": "24.00",
+   "page_text": "A cool jade roller that glides over skin to calm puffiness.",
+   "colour": "pale green stone on a gold frame",
+   "real_size": "about 15 cm long",
+   "behaviour": "The stone barrel turns on its frame as the roller is pushed over the skin.",
+   "person": "A woman in her twenties with a towel in her hair, at a vanity.",
+   "lines": [
+    "Meet the Chill Stone Face Roller from Velia, a cool calm start to every morning.",
+    "The cool jade roller glides over your skin to calm puffiness in just a few minutes.",
+    "Get your Chill Stone Face Roller today for just $24.00 from Velia, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the roller to the lens",
+    "the roller glides up a cheek",
+    "the presenter rolls her jaw"
+   ]
+  },
+  "lens": {
+   "product": "Orbit Lens Clip",
+   "brand": "Snapkit",
+   "price": "22.00",
+   "page_text": "A clip-on macro lens that turns any phone into a close-up camera.",
+   "colour": "black",
+   "real_size": "clip about 4 cm wide",
+   "behaviour": "The clip opens, grips the phone's corner over the camera and holds still.",
+   "person": "A man in his twenties with a camera bag, in a plant-filled studio.",
+   "lines": [
+    "Meet the Orbit Lens Clip from Snapkit, the easy way to shoot close-ups on your phone.",
+    "Clip it on and any phone becomes a close-up camera for flowers, food and tiny details.",
+    "Get your Orbit Lens Clip today for just $22.00 from Snapkit, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the clip to the lens",
+    "the clip snaps onto a phone's corner over its camera",
+    "the presenter shoots a flower close up"
+   ]
+  },
+  "speaker": {
+   "product": "Pebble Speaker",
+   "brand": "Hush Audio",
+   "price": "45.00",
+   "page_text": "A palm-sized speaker with a rubber base that sits steady on any table.",
+   "colour": "sand grey",
+   "real_size": "about 9 cm wide",
+   "behaviour": "It lands flat on its rubber base and stays put without rolling.",
+   "person": "A woman in her twenties, in a cosy living room.",
+   "lines": [
+    "Meet the Pebble Speaker from Hush Audio, a palm-sized speaker with big clear sound.",
+    "Its rubber base sits steady on any table, so the music plays on wherever you set it down.",
+    "Get your Pebble Speaker today for just $45.00 from Hush Audio, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the speaker to the lens",
+    "the speaker is set down onto a wooden table",
+    "the presenter taps play and smiles"
+   ]
+  },
+  "vacuum": {
+   "product": "Crumb Hand Vacuum",
+   "brand": "Tidyhome",
+   "price": "39.00",
+   "page_text": "A cordless hand vacuum that lifts crumbs from tables and car seats in seconds.",
+   "colour": "white and teal",
+   "real_size": "about 30 cm long",
+   "behaviour": "Crumbs are sucked up into the nozzle and the surface behind it is left clean.",
+   "person": "A man in his thirties, in a bright kitchen.",
+   "lines": [
+    "Meet the Crumb Hand Vacuum from Tidyhome, the quick fix for crumbs all over the house.",
+    "It lifts crumbs from tables and car seats in seconds, and it runs without a cord.",
+    "Get your Crumb Hand Vacuum today for just $39.00 from Tidyhome, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the vacuum to the lens",
+    "the vacuum passes over crumbs on a table and leaves it clean",
+    "the presenter puts the vacuum on its stand"
+   ]
+  }
+ },
+ "cases": [
+  {
+   "id": "impossible-fails-01-brush",
+   "kind": "cant_be_done",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The brush has to go through the hair, not slide over it.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The brush has to go through the hair, not slide over it. Fix it!",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The brush has to go through the hair, not slide over it.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The brush has to go through the hair, not slide over it.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The brush has to go through the hair, not slide over it. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The brush has to go through the hair, not slide over it.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-02-brush",
+   "kind": "cant_be_done",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 3: she switches the brush to her other hand halfway. Keep it in the same hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "The brush jumps from her right hand to her left in scene 3. Same hand please.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 still has the hand swap. One hand, start to finish.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Please, scene 3: the brush can't change hands. Keep it in one hand.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 is still wrong. The brush must stay in one hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 3 STILL has the same problem: The brush must stay in one hand the whole time. Fix it!",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 3, I'll pay for it. The brush must stay in one hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 3. The brush must stay in one hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 3: The brush must stay in one hand the whole time. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 3 again. I don't care what it costs. The brush must stay in one hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-03-cream",
+   "kind": "cant_be_done",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The cream has to melt into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The cream has to melt into the skin. Fix it!",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The cream has to melt into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The cream has to melt into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The cream has to melt into the skin. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The cream has to melt into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-04-floss",
+   "kind": "cant_be_done",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss is stiff like a stick. It should bend around the tooth like real floss.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "The floss in scene 2 still looks like a rod. Make it move like actual floss.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the floss doesn't curve around the teeth. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a stiff line in scene 2. Real floss bends. Make it bend.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The floss has to bend around the tooth.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The floss has to bend around the tooth. Fix it!",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The floss has to bend around the tooth.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The floss has to bend around the tooth.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The floss has to bend around the tooth. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The floss has to bend around the tooth.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-05-roller",
+   "kind": "cant_be_done",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller just slides, the stone never turns. It should roll as it goes up her cheek.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the roller's stone still doesn't spin. It needs to actually roll.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: it's sliding, not rolling. Make the stone turn.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "The roller in scene 2 still doesn't roll. Please make the stone turn as it moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The stone has to turn as the roller moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The stone has to turn as the roller moves. Fix it!",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The stone has to turn as the roller moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The stone has to turn as the roller moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The stone has to turn as the roller moves. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The stone has to turn as the roller moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-06-bottle",
+   "kind": "cant_be_done",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the handle flips way past upright and folds back down. It should stop straight up like the real one.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the handle still swings too far. It has to stop at the top.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the handle keeps going past its stopping point. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "The handle in scene 2 still over-rotates. The real one stops upright.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The handle has to stop straight up.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The handle has to stop straight up. Fix it!",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The handle has to stop straight up.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The handle has to stop straight up.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The handle has to stop straight up. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The handle has to stop straight up.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-07-speaker",
+   "kind": "cant_be_done",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: when she sets the speaker down it flips over. It should land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the speaker still tumbles when it hits the table. It needs to land flat.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: it flips on landing. Make it sit still on its base.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "The speaker in scene 2 still rolls over when it lands. Please fix that.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The speaker has to land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The speaker has to land flat and stay put. Fix it!",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The speaker has to land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The speaker has to land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The speaker has to land flat and stay put. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The speaker has to land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-08-lens",
+   "kind": "cant_be_done",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The phone must not bend.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The phone must not bend. Fix it!",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The phone must not bend.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The phone must not bend.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The phone must not bend. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The phone must not bend.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-09-cream",
+   "kind": "cant_be_done",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 3: the jar lid melts into the jar when she closes it. It should screw on like a normal lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 3 the lid still merges into the jar. It needs to twist on and stay a separate lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 again: the lid and jar blend together. Make it a real lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "The lid in scene 3 still melts into the jar. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 is still wrong. The lid has to screw on, not melt into the jar.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 3 STILL has the same problem: The lid has to screw on, not melt into the jar. Fix it!",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 3, I'll pay for it. The lid has to screw on, not melt into the jar.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 3. The lid has to screw on, not melt into the jar.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 3: The lid has to screw on, not melt into the jar. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 3 again. I don't care what it costs. The lid has to screw on, not melt into the jar.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-10-vacuum",
+   "kind": "cant_be_done",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the crumbs fly toward the nozzle and then reappear behind it. They should just get sucked up.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the crumbs still come back after the vacuum passes. They need to disappear.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: crumbs reappear behind the vacuum. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "Crumbs still pop back up in scene 2. They should be gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The crumbs have to be sucked up and stay gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The crumbs have to be sucked up and stay gone. Fix it!",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The crumbs have to be sucked up and stay gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The crumbs have to be sucked up and stay gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The crumbs have to be sucked up and stay gone. Why is this so hard?",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The crumbs have to be sucked up and stay gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-01-brush",
+   "kind": "cant_be_done",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The brush has to go through the hair, not slide over it.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The brush has to go through the hair, not slide over it. Fix it!",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The brush has to go through the hair, not slide over it.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The brush has to go through the hair, not slide over it.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The brush has to go through the hair, not slide over it. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The brush has to go through the hair, not slide over it.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-02-brush",
+   "kind": "cant_be_done",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 3: she switches the brush to her other hand halfway. Keep it in the same hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "The brush jumps from her right hand to her left in scene 3. Same hand please.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 still has the hand swap. One hand, start to finish.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Please, scene 3: the brush can't change hands. Keep it in one hand.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 is still wrong. The brush must stay in one hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 3 STILL has the same problem: The brush must stay in one hand the whole time. Fix it!",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 3, I'll pay for it. The brush must stay in one hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 3. The brush must stay in one hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 3: The brush must stay in one hand the whole time. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 3 again. I don't care what it costs. The brush must stay in one hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-03-cream",
+   "kind": "cant_be_done",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The cream has to melt into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The cream has to melt into the skin. Fix it!",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The cream has to melt into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The cream has to melt into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The cream has to melt into the skin. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The cream has to melt into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-04-floss",
+   "kind": "cant_be_done",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss is stiff like a stick. It should bend around the tooth like real floss.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "The floss in scene 2 still looks like a rod. Make it move like actual floss.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the floss doesn't curve around the teeth. Please fix it.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a stiff line in scene 2. Real floss bends. Make it bend.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The floss has to bend around the tooth.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The floss has to bend around the tooth. Fix it!",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The floss has to bend around the tooth.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The floss has to bend around the tooth.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The floss has to bend around the tooth. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The floss has to bend around the tooth.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-05-roller",
+   "kind": "cant_be_done",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller just slides, the stone never turns. It should roll as it goes up her cheek.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the roller's stone still doesn't spin. It needs to actually roll.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: it's sliding, not rolling. Make the stone turn.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "The roller in scene 2 still doesn't roll. Please make the stone turn as it moves.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The stone has to turn as the roller moves.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The stone has to turn as the roller moves. Fix it!",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The stone has to turn as the roller moves.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The stone has to turn as the roller moves.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The stone has to turn as the roller moves. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The stone has to turn as the roller moves.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-06-bottle",
+   "kind": "cant_be_done",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the handle flips way past upright and folds back down. It should stop straight up like the real one.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the handle still swings too far. It has to stop at the top.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the handle keeps going past its stopping point. Fix it please.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "The handle in scene 2 still over-rotates. The real one stops upright.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The handle has to stop straight up.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The handle has to stop straight up. Fix it!",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The handle has to stop straight up.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The handle has to stop straight up.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The handle has to stop straight up. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The handle has to stop straight up.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-07-speaker",
+   "kind": "cant_be_done",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: when she sets the speaker down it flips over. It should land flat and stay put.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the speaker still tumbles when it hits the table. It needs to land flat.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: it flips on landing. Make it sit still on its base.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "The speaker in scene 2 still rolls over when it lands. Please fix that.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The speaker has to land flat and stay put.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The speaker has to land flat and stay put. Fix it!",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The speaker has to land flat and stay put.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The speaker has to land flat and stay put.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The speaker has to land flat and stay put. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The speaker has to land flat and stay put.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-08-lens",
+   "kind": "cant_be_done",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The phone must not bend.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The phone must not bend. Fix it!",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The phone must not bend.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The phone must not bend.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The phone must not bend. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The phone must not bend.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-09-cream",
+   "kind": "cant_be_done",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 3: the jar lid melts into the jar when she closes it. It should screw on like a normal lid.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 3 the lid still merges into the jar. It needs to twist on and stay a separate lid.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 again: the lid and jar blend together. Make it a real lid.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "The lid in scene 3 still melts into the jar. Please fix it.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 is still wrong. The lid has to screw on, not melt into the jar.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 3 STILL has the same problem: The lid has to screw on, not melt into the jar. Fix it!",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 3, I'll pay for it. The lid has to screw on, not melt into the jar.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 3. The lid has to screw on, not melt into the jar.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 3: The lid has to screw on, not melt into the jar. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 3 again. I don't care what it costs. The lid has to screw on, not melt into the jar.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-10-vacuum",
+   "kind": "cant_be_done",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the crumbs fly toward the nozzle and then reappear behind it. They should just get sucked up.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the crumbs still come back after the vacuum passes. They need to disappear.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: crumbs reappear behind the vacuum. Fix it please.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "Crumbs still pop back up in scene 2. They should be gone.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2 is still wrong. The crumbs have to be sucked up and stay gone.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "This is ridiculous. Scene 2 STILL has the same problem: The crumbs have to be sucked up and stay gone. Fix it!",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Just try again on scene 2, I'll pay for it. The crumbs have to be sucked up and stay gone.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Please, one more go on scene 2. The crumbs have to be sucked up and stay gone.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "I've asked so many times. Scene 2: The crumbs have to be sucked up and stay gone. Why is this so hard?",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Try scene 2 again. I don't care what it costs. The crumbs have to be sucked up and stay gone.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-01-lens",
+   "kind": "hard_but_possible",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the camera zooms in on the clip and then pulls back out. Stay zoomed in.",
+     "ending": "passes_missing",
+     "look": "The camera moves in on the clip, then pulls back out to a wide shot.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 it still zooms back out at the end. Keep it close the whole time.",
+     "ending": "passes_missing",
+     "look": "The camera moves in on the clip, then pulls back out to a wide shot.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: please stay zoomed in on the clip, no pulling back.",
+     "ending": "passes",
+     "look": "The camera moves in on the clip and stays close to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The camera moves in on the clip and stays close to the end.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-02-bottle",
+   "kind": "hard_but_possible",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the bottle has two handles. It only has one.",
+     "ending": "passes_missing",
+     "look": "The bottle's lid shows a second handle beside the real one.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still shows an extra handle on the bottle. Just one handle.",
+     "ending": "passes_missing",
+     "look": "The bottle's lid shows a second handle beside the real one.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: there's still a second handle. Please remove it.",
+     "ending": "passes",
+     "look": "The bottle has one handle on the lid, as on the page photos.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The bottle has one handle on the lid, as on the page photos.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-03-vacuum",
+   "kind": "hard_but_possible",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: after the vacuum cleans the table, the crumbs show up again at the end. The table should stay clean.",
+     "ending": "passes_missing",
+     "look": "The table is clean after the pass, then crumbs show up again in the last second.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the cleaned table gets dirty again at the end. Keep it clean.",
+     "ending": "passes_missing",
+     "look": "The table is clean after the pass, then crumbs show up again in the last second.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the table should stay clean once it's vacuumed.",
+     "ending": "passes",
+     "look": "The table is clean after the pass and stays clean to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The table is clean after the pass and stays clean to the end.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-04-roller",
+   "kind": "hard_but_possible",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 3: she's lying on her side. She should be lying on her back for this.",
+     "ending": "passes_missing",
+     "look": "She is lying on her side on the bed.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 3 she's still on her side. On her back please.",
+     "ending": "passes_missing",
+     "look": "She is lying on her side on the bed.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 again: lying on her back, not her side.",
+     "ending": "passes",
+     "look": "She is lying on her back on the bed.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 3 looks right now.",
+     "ending": "passes",
+     "look": "She is lying on her back on the bed.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-05-floss",
+   "kind": "hard_but_possible",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss case looks bigger than the toothbrush next to it. It's a small case.",
+     "ending": "passes_missing",
+     "look": "The floss case is drawn about as long as the toothbrush beside it.",
+     "expected_try": true
+    },
+    {
+     "say": "The floss case in scene 2 is still huge next to the toothbrush. Make it smaller.",
+     "ending": "passes_missing",
+     "look": "The floss case is drawn about as long as the toothbrush beside it.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the case should be small, much smaller than the toothbrush.",
+     "ending": "passes",
+     "look": "The floss case is small, about a third of the toothbrush's length.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The floss case is small, about a third of the toothbrush's length.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-06-brush",
+   "kind": "hard_but_possible",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the bristles are white. They should be pink like the brush.",
+     "ending": "passes_missing",
+     "look": "The bristles are white.",
+     "expected_try": true
+    },
+    {
+     "say": "The bristles in scene 2 are still white. Pink please.",
+     "ending": "passes_missing",
+     "look": "The bristles are white.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: pink bristles, not white.",
+     "ending": "passes",
+     "look": "The bristles are pink, matching the brush.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The bristles are pink, matching the brush.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-07-speaker",
+   "kind": "hard_but_possible",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: there's a cable sticking out of the speaker. It's wireless.",
+     "ending": "passes_missing",
+     "look": "A black cable runs from the back of the speaker.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still shows a cable on the speaker. Remove it.",
+     "ending": "passes_missing",
+     "look": "A black cable runs from the back of the speaker.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: no cable please, it's a wireless speaker.",
+     "ending": "passes",
+     "look": "No cable; the speaker sits alone on the table.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "No cable; the speaker sits alone on the table.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "hard-08-cream",
+   "kind": "hard_but_possible",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: her hand looks like it has six fingers. Fix the hand.",
+     "ending": "passes_missing",
+     "look": "The hand rubbing the cheek shows six fingers.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still has a weird extra finger. Normal hand please.",
+     "ending": "passes_missing",
+     "look": "The hand rubbing the cheek shows six fingers.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the hand needs five fingers.",
+     "ending": "passes",
+     "look": "The hand rubbing the cheek has five fingers.",
+     "expected_try": true
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The hand rubbing the cheek has five fingers.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "alternative-works-01-brush",
+   "kind": "alternative_works",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "OK, scene 2: go with the closest thing you offered instead.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Thanks, scene 2 works for me now.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "alternative-works-02-brush",
+   "kind": "alternative_works",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 3: she switches the brush to her other hand halfway. Keep it in the same hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "The brush jumps from her right hand to her left in scene 3. Same hand please.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 still has the hand swap. One hand, start to finish.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Please, scene 3: the brush can't change hands. Keep it in one hand.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "OK, scene 3: go with the closest thing you offered instead.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Thanks, scene 3 works for me now.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "alternative-works-03-cream",
+   "kind": "alternative_works",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "OK, scene 2: go with the closest thing you offered instead.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Thanks, scene 2 works for me now.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "alternative-fails-04-floss",
+   "kind": "alternative_fails",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss is stiff like a stick. It should bend around the tooth like real floss.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "The floss in scene 2 still looks like a rod. Make it move like actual floss.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the floss doesn't curve around the teeth. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a stiff line in scene 2. Real floss bends. Make it bend.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "OK, scene 2: go with the closest thing you offered instead.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: that alternative doesn't look right either. Try again.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: the alternative still isn't right. Again please.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: the alternative is still off. One more time.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: please fix the alternative, it's still wrong.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: try the alternative again, I'll pay.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "And scene 2: The floss has to bend around the tooth. Try that once more.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "alternative-fails-05-roller",
+   "kind": "alternative_fails",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller just slides, the stone never turns. It should roll as it goes up her cheek.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the roller's stone still doesn't spin. It needs to actually roll.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: it's sliding, not rolling. Make the stone turn.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": true
+    },
+    {
+     "say": "The roller in scene 2 still doesn't roll. Please make the stone turn as it moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    },
+    {
+     "say": "OK, scene 2: go with the closest thing you offered instead.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: that alternative doesn't look right either. Try again.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: the alternative still isn't right. Again please.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: the alternative is still off. One more time.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: please fix the alternative, it's still wrong.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: try the alternative again, I'll pay.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "And scene 2: The stone has to turn as the roller moves. Try that once more.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "alternative-fails-06-bottle",
+   "kind": "alternative_fails",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the handle flips way past upright and folds back down. It should stop straight up like the real one.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the handle still swings too far. It has to stop at the top.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the handle keeps going past its stopping point. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "The handle in scene 2 still over-rotates. The real one stops upright.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "OK, scene 2: go with the closest thing you offered instead.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: that alternative doesn't look right either. Try again.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: the alternative still isn't right. Again please.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: the alternative is still off. One more time.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: please fix the alternative, it's still wrong.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: try the alternative again, I'll pay.",
+     "ending": "passes_missing",
+     "look": "The change asked for is not there.",
+     "expected_try": false
+    },
+    {
+     "say": "And scene 2: The handle has to stop straight up. Try that once more.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "reworded-01-brush",
+   "kind": "reworded_after_closed",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: I want to see the hair part as the bristles pass through it.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Maybe film scene 2 from the side so we can see the bristles sink into the hair?",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "What if she brushes slower in scene 2, so the bristles actually go in?",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "reworded-03-cream",
+   "kind": "reworded_after_closed",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: the white cream should disappear as she rubs, leaving just skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Try a smaller dab of cream in scene 2, so it can soak in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Could you do scene 2 as a close-up of the cheek so the cream vanishes into the skin?",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "reworded-06-bottle",
+   "kind": "reworded_after_closed",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the handle flips way past upright and folds back down. It should stop straight up like the real one.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the handle still swings too far. It has to stop at the top.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the handle keeps going past its stopping point. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": true
+    },
+    {
+     "say": "The handle in scene 2 still over-rotates. The real one stops upright.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: the handle should come to rest pointing straight up, not go over.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Maybe show the finger stopping the handle at the top in scene 2?",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    },
+    {
+     "say": "Film scene 2 from the front so the handle clearly stops upright.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "reworded-08-lens",
+   "kind": "reworded_after_closed",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: the phone has to stay rigid when the clip grips it.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Maybe use a thicker phone in scene 2 so it can't bend?",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Could the clip go on slowly in scene 2, so the phone stays straight?",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-01-brush",
+   "kind": "other_scene",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the lighting is too dark.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: the lighting is too dark.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, the lighting is too dark.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, the lighting is too dark.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: the lighting is too dark.",
+     "ending": "passes",
+     "look": "The room is lit brighter than before.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: the lighting is too dark.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-02-cream",
+   "kind": "other_scene",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: her skin looks plastic and fake.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: her skin looks plastic and fake.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, her skin looks plastic and fake.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, her skin looks plastic and fake.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: her skin looks plastic and fake.",
+     "ending": "passes",
+     "look": "Her skin shows natural texture.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: her skin looks plastic and fake.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-03-floss",
+   "kind": "other_scene",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the background is too cluttered.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: the background is too cluttered.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, the background is too cluttered.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, the background is too cluttered.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: the background is too cluttered.",
+     "ending": "passes",
+     "look": "The background is plain and tidy.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: the background is too cluttered.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-04-bottle",
+   "kind": "other_scene",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the camera shakes too much.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: the camera shakes too much.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, the camera shakes too much.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, the camera shakes too much.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: the camera shakes too much.",
+     "ending": "passes",
+     "look": "The camera is steady.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: the camera shakes too much.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-05-roller",
+   "kind": "other_scene",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the colours look washed out.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: the colours look washed out.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, the colours look washed out.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, the colours look washed out.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: the colours look washed out.",
+     "ending": "passes",
+     "look": "The colours are rich and warm.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: the colours look washed out.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-06-lens",
+   "kind": "other_scene",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the clip looks blurry.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: the clip looks blurry.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, the clip looks blurry.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, the clip looks blurry.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: the clip looks blurry.",
+     "ending": "passes",
+     "look": "The clip is sharp and in focus.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: the clip looks blurry.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-07-speaker",
+   "kind": "other_scene",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: there's a weird dark shadow across the frame.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: there's a weird dark shadow across the frame.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, there's a weird dark shadow across the frame.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, there's a weird dark shadow across the frame.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: there's a weird dark shadow across the frame.",
+     "ending": "passes",
+     "look": "No odd shadow; the light is even.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: there's a weird dark shadow across the frame.",
+     "ending": "gives_up",
+     "reason": "The video model can't change this in this shot.",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "other-scene-08-vacuum",
+   "kind": "other_scene",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the kitchen feels cold and grey.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 still: the kitchen feels cold and grey.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again, the kitchen feels cold and grey.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": true
+    },
+    {
+     "say": "Please fix scene 2, the kitchen feels cold and grey.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3 has the same problem: the kitchen feels cold and grey.",
+     "ending": "passes",
+     "look": "The kitchen looks warm and bright.",
+     "expected_try": true
+    },
+    {
+     "say": "And scene 2, one more time: the kitchen feels cold and grey.",
+     "ending": "passes_missing",
+     "look": "It looks the same as before.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "closed-and-new-07-speaker",
+   "kind": "closed_and_new",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: when she sets the speaker down it flips over. It should land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the speaker still tumbles when it hits the table. It needs to land flat.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: it flips on landing. Make it sit still on its base.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": true
+    },
+    {
+     "say": "The speaker in scene 2 still rolls over when it lands. Please fix that.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer. Also scene 2 again: The speaker has to land flat and stay put.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "closed-and-new-08-lens",
+   "kind": "closed_and_new",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her. Also scene 2 again: The phone must not bend.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "closed-and-new-09-cream",
+   "kind": "closed_and_new",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 3: the jar lid melts into the jar when she closes it. It should screw on like a normal lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 3 the lid still merges into the jar. It needs to twist on and stay a separate lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 again: the lid and jar blend together. Make it a real lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": true
+    },
+    {
+     "say": "The lid in scene 3 still melts into the jar. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead? Also scene 3 again: The lid has to screw on, not melt into the jar.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "closed-and-new-10-vacuum",
+   "kind": "closed_and_new",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the crumbs fly toward the nozzle and then reappear behind it. They should just get sucked up.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the crumbs still come back after the vacuum passes. They need to disappear.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: crumbs reappear behind the vacuum. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": true
+    },
+    {
+     "say": "Crumbs still pop back up in scene 2. They should be gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 3: make it feel more like morning light. Also scene 2 again: The crumbs have to be sucked up and stay gone.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "breaks-08-lens",
+   "kind": "breaks",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "breaks",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "gives_up",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "gives_up",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "gives_up",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 is still wrong. The phone must not bend.",
+     "ending": "gives_up",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber.",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "breaks-09-cream",
+   "kind": "breaks",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 3: the jar lid melts into the jar when she closes it. It should screw on like a normal lid.",
+     "ending": "breaks",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 3 the lid still merges into the jar. It needs to twist on and stay a separate lid.",
+     "ending": "gives_up",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 again: the lid and jar blend together. Make it a real lid.",
+     "ending": "gives_up",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "expected_try": true
+    },
+    {
+     "say": "The lid in scene 3 still melts into the jar. Please fix it.",
+     "ending": "gives_up",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 is still wrong. The lid has to screw on, not melt into the jar.",
+     "ending": "gives_up",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape.",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "breaks-10-vacuum",
+   "kind": "breaks",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the crumbs fly toward the nozzle and then reappear behind it. They should just get sucked up.",
+     "ending": "breaks",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the crumbs still come back after the vacuum passes. They need to disappear.",
+     "ending": "gives_up",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: crumbs reappear behind the vacuum. Fix it please.",
+     "ending": "gives_up",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "expected_try": true
+    },
+    {
+     "say": "Crumbs still pop back up in scene 2. They should be gone.",
+     "ending": "gives_up",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 is still wrong. The crumbs have to be sucked up and stay gone.",
+     "ending": "gives_up",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it.",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "much-later-01-brush",
+   "kind": "much_later",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": true
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: make it feel more like morning light.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: add a small plant in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Back to scene 2: The brush has to go through the hair, not slide over it.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "much-later-02-brush",
+   "kind": "much_later",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 3: she switches the brush to her other hand halfway. Keep it in the same hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "The brush jumps from her right hand to her left in scene 3. Same hand please.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3 still has the hand swap. One hand, start to finish.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": true
+    },
+    {
+     "say": "Please, scene 3: the brush can't change hands. Keep it in one hand.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: make it feel more like morning light.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: add a small plant in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Back to scene 3: The brush must stay in one hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "much-later-03-cream",
+   "kind": "much_later",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": true
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: make it feel more like morning light.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: add a small plant in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Back to scene 2: The cream has to melt into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "much-later-04-floss",
+   "kind": "much_later",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss is stiff like a stick. It should bend around the tooth like real floss.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "The floss in scene 2 still looks like a rod. Make it move like actual floss.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 again: the floss doesn't curve around the teeth. Please fix it.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": true
+    },
+    {
+     "say": "Still a stiff line in scene 2. Real floss bends. Make it bend.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 3: make it feel more like morning light.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: add a small plant in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Back to scene 2: The floss has to bend around the tooth.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth.",
+     "expected_try": false
+    }
+   ]
+  },
+  {
+   "id": "healthy-01-brush",
+   "kind": "healthy",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: can you make the lighting warmer?",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: show the hair a bit longer and wavier.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: use a marble counter in the background instead of tiles.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "healthy-02-cream",
+   "kind": "healthy",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: make it a bit brighter.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: show a little more of her face, not just the cheek.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: put a plant in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "healthy-03-floss",
+   "kind": "healthy",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: make the bathroom look newer.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: show the floss case in the corner of the shot.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: give it a cooler blue light.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "healthy-04-bottle",
+   "kind": "healthy",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: put it outdoors on a rock instead of a table.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: make it golden hour light.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: show a backpack in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "healthy-05-roller",
+   "kind": "healthy",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: make the room softer and pinker.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: show the roller a little closer.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: add a towel in her hair.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "healthy-06-lens",
+   "kind": "healthy",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: use a white phone instead of black.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: put a flower in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: make the desk wooden.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "healthy-07-vacuum",
+   "kind": "healthy",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: use a darker wooden table.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: add a few more crumbs at the start.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: make the kitchen brighter.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-01-brush",
+   "kind": "solved_then_different",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush is too far away, show it closer.",
+     "ending": "passes_missing",
+     "look": "The brush is small in a wide shot.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: still too far, I want it close up.",
+     "ending": "passes",
+     "look": "The brush fills a third of the frame, close up.",
+     "expected_try": true
+    },
+    {
+     "say": "Great, scene 2 looks good now, thanks!",
+     "ending": "passes",
+     "look": "The brush fills a third of the frame, close up.",
+     "expected_try": false
+    },
+    {
+     "say": "Now scene 2: can the hair be blonde instead of brown?",
+     "ending": "passes",
+     "look": "The hair is blonde.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-02-cream",
+   "kind": "solved_then_different",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the jar should be open on the counter behind her.",
+     "ending": "passes_missing",
+     "look": "No jar is on the counter behind her.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: I still don't see the open jar behind her.",
+     "ending": "passes",
+     "look": "An open jar sits on the counter behind her.",
+     "expected_try": true
+    },
+    {
+     "say": "Perfect, scene 2 is right now.",
+     "ending": "passes",
+     "look": "An open jar sits on the counter behind her.",
+     "expected_try": false
+    },
+    {
+     "say": "Next, scene 2: make the light warmer.",
+     "ending": "passes",
+     "look": "The light is warm.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-03-floss",
+   "kind": "solved_then_different",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the mirror is missing, add a mirror behind him.",
+     "ending": "passes_missing",
+     "look": "There is no mirror behind him.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: still no mirror.",
+     "ending": "passes",
+     "look": "A mirror hangs behind him.",
+     "expected_try": true
+    },
+    {
+     "say": "Good, scene 2 has the mirror now. Thanks.",
+     "ending": "passes",
+     "look": "A mirror hangs behind him.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: can he wear a blue t-shirt?",
+     "ending": "passes",
+     "look": "He wears a blue t-shirt.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-04-bottle",
+   "kind": "solved_then_different",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the bottle is the wrong green, too light.",
+     "ending": "passes_missing",
+     "look": "The bottle is a light mint green.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: still too light a green.",
+     "ending": "passes",
+     "look": "The bottle is a deep forest green.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2 is the right green now, thanks.",
+     "ending": "passes",
+     "look": "The bottle is a deep forest green.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: put a trail map on the table.",
+     "ending": "passes",
+     "look": "A trail map lies on the table.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-05-roller",
+   "kind": "solved_then_different",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller is upside down, the stone should be on top.",
+     "ending": "passes_missing",
+     "look": "The stone is at the bottom of the frame.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: still upside down.",
+     "ending": "passes",
+     "look": "The stone is on top, the right way up.",
+     "expected_try": true
+    },
+    {
+     "say": "Great, scene 2 is the right way up now.",
+     "ending": "passes",
+     "look": "The stone is on top, the right way up.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: add some morning sunlight.",
+     "ending": "passes",
+     "look": "Morning sun comes through a window.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-06-lens",
+   "kind": "solved_then_different",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone is too old-looking, use a modern phone.",
+     "ending": "passes_missing",
+     "look": "The phone has thick bezels and a home button.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: phone still looks old.",
+     "ending": "passes",
+     "look": "The phone is modern with thin bezels.",
+     "expected_try": true
+    },
+    {
+     "say": "Nice, scene 2 phone looks modern now.",
+     "ending": "passes",
+     "look": "The phone is modern with thin bezels.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: show a succulent being photographed.",
+     "ending": "passes",
+     "look": "A succulent sits in front of the lens.",
+     "expected_try": true
+    }
+   ]
+  },
+  {
+   "id": "solved-07-speaker",
+   "kind": "solved_then_different",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: the table should be wooden, not glass.",
+     "ending": "passes_missing",
+     "look": "The table is glass.",
+     "expected_try": true
+    },
+    {
+     "say": "Scene 2: still a glass table.",
+     "ending": "passes",
+     "look": "The table is wooden.",
+     "expected_try": true
+    },
+    {
+     "say": "Good, scene 2 has a wooden table now, thanks.",
+     "ending": "passes",
+     "look": "The table is wooden.",
+     "expected_try": false
+    },
+    {
+     "say": "Scene 2: put a cup of coffee next to the speaker.",
+     "ending": "passes",
+     "look": "A cup of coffee sits next to the speaker.",
+     "expected_try": true
+    }
+   ]
+  }
+ ]
+}
