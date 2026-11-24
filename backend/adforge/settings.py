@@ -313,6 +313,5 @@ FIRECRAWL_CONCURRENCY = 2
 ELEVENLABS_TRANSCRIPTION_CONCURRENCY = 8
 SERVICE_LIMIT_NOTICE_SECONDS = 120.0
 
-# PROTOTYPE #738: how many owner asks on one problem before the problem list suggests not
-# repeating what was tried.
-REPEATED_ASK_LIMIT = int(os.environ.get("REPEATED_ASK_LIMIT") or 2)
+# PROTOTYPE #738 v2: tries on one thing the owner asked for before it is closed.
+THING_TRIES = int(os.environ.get("THING_TRIES") or 3)

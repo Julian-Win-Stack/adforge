@@ -48,6 +48,11 @@ class StartSceneAgent(Tool):
             and same_owner_message(call, previous)
         ):
             raise Refused("after a give-up, use pass_note for the producer's one extra idea.")
+        if call.tool != "pass_note":
+            from .owner_problems import own_note_allowed
+
+            # PROTOTYPE #738 v2: one ask is one try, whichever tool would film again.
+            own_note_allowed(call, scene)
         try:
             h3_clip_seconds(len(scene.line.split()))
         except ValueError as error:
@@ -91,17 +96,19 @@ class SceneNote(BaseModel):
         "for your own re-plan, as after a give-up or when the owner says to finish with "
         "what there is.",
     )
-    # PROTOTYPE #738: every owner-asked note names its problem.
-    problem: int | None = Field(
+    # PROTOTYPE #738 v2: every owner-asked note is filed as the same thing or a new thing.
+    same_thing: int | None = Field(
         default=None,
-        description="For an owner-asked note: the number of the problem on the session's "
-        "problem list that this note is about, when the owner is asking about it again, "
-        "even in other words or on another scene. Leave empty for a new request.",
+        description="For an owner-asked note: the number of the thing the owner is asking "
+        "for again on this scene, the same result even in other words or with a way to do "
+        "it they suggest. Leave empty for a new thing.",
     )
-    new_problem: str = Field(
+    new_thing: str = Field(
         default="",
-        description="For an owner-asked note about a request not on the problem list: one "
-        "plain sentence saying what the owner wants. Give either this or problem, never both.",
+        description="For an owner-asked note that asks for a new result on this scene, "
+        "including an alternative you offered and the owner took, or the same complaint on "
+        "another scene: one plain sentence saying what the owner wants. Give either this or "
+        "same_thing, never both.",
     )
 
 
@@ -160,8 +167,8 @@ class PassNote(Tool):
                             scene,
                             quotes,
                             owner_asked=note.owner_asked,
-                            problem=note.problem,
-                            new_problem=note.new_problem,
+                            same_thing=note.same_thing,
+                            new_thing=note.new_thing,
                         )
                         quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)
                         question = OwnerQuestion.objects.filter(
@@ -184,6 +191,10 @@ class PassNote(Tool):
                         )
                 except Refused as error:
                     said.append(f"Scene {note.scene}'s note was refused: {error}")
+                    from .owner_problems import Briefing
+
+                    if isinstance(error, Briefing):
+                        error.keep()
         return "\n".join(said)
 
 

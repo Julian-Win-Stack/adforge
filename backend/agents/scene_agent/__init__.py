@@ -345,14 +345,18 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
 
     fixing = AgentFix.objects.get(step=step)
     end = "parked for the owner's pause" if fixing.paused_at else f"gave up: {fixing.gave_up}"
+    run = current_run(fixing)
+    # PROTOTYPE #738 v2: an owner-asked try is the ask's one try; nothing films by itself.
+    asked_by_owner = lifecycle.owner_asked(run)
     if fixing.gave_up and not fixing.paused_at:
         end += (
             " The last clip stays in the ad; the owner can pick any try."
             if fixing.kept_id is not None
+            else " The scene keeps the clip it had."
+            if asked_by_owner
             else " Give this scene one different idea through pass_note, owner_asked false; "
             "after its one extra run, finish with the clip or the automatic talking recovery."
         )
-    run = current_run(fixing)
     if run.reason.startswith(HANDED_BACK):
         end = (
             run.reason + " If the owner asked for words shown on screen, set them as the overlay "
@@ -377,7 +381,9 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         if made is not None and (made.ruling or {}).get("verdict") == "not_checked"
         else ""
     )
+    from agents import owner_problems
+
     return (
         f"Background step finished: scene {step.scene.number}'s agent {end}."
-        f"{_cost(step)}{unchecked}"
+        f"{_cost(step)}{unchecked}{owner_problems.try_line(run)}"
     )

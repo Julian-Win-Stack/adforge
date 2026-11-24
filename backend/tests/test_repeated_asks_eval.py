@@ -25,6 +25,8 @@ def tiny(case_id: str, *messages: OwnerMessage) -> Case:
 
 
 def note(scene: int, said: str, *, owner_asked: bool = True) -> tuple[str, dict[str, Any]]:
+    """An owner-asked note filed as a new thing (prototype #738 v2 needs one filed)."""
+    filed = {"new_thing": said} if owner_asked else {}
     return (
         "pass_note",
         {
@@ -34,6 +36,7 @@ def note(scene: int, said: str, *, owner_asked: bool = True) -> tuple[str, dict[
                     "instruction": f"Change scene {scene}: {said}",
                     "quotes": [said],
                     "owner_asked": owner_asked,
+                    **filed,
                 }
             ]
         },
@@ -86,17 +89,16 @@ def test_impossible_check_fails_counts_the_owner_note_and_the_producers_extra_id
         [
             [turn(calls=[note(2, first.say)]), turn(says="On it.")],
             [turn(calls=[note(2, first.say, owner_asked=False)]), turn(says="Trying once more.")],
-            [turn(says="Scene 2 is said to camera now.")],
             [turn(says="I tried twice and couldn't get it; this is the closest I can do.")],
         ],
     )
 
     found = counts(record)
     assert record["error"] == ""
-    assert found["per_ask"] == [2, 0]
-    assert (found["owner"], found["producer"], found["code"]) == (1, 1, 0)
+    # Prototype #738 v2: one ask is one try, so the producer's own extra idea is refused.
+    assert found["per_ask"] == [1, 0]
+    assert (found["owner"], found["producer"], found["code"]) == (1, 0, 0)
     assert found["refused_first"] is False
-    assert "problems" not in found
 
 
 def test_impossible_check_passes_keeps_looks_answer_and_counts_no_remake_after_the_refusal(

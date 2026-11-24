@@ -536,11 +536,6 @@ def _send(session: Session, sending: SendSerializer) -> Response:
         )
         # Whatever they sent, their message ends the pause: the producer reads it first.
         pause.clear(session, message)
-        if not pasted:
-            # PROTOTYPE #738: the problem list arrives with the owner's message.
-            from agents import owner_problems
-
-            owner_problems.note_the_list(session)
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
         wake_producer(str(session.pk))

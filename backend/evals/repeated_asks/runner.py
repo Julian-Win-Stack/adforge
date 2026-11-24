@@ -20,7 +20,7 @@ from .cases import Case
 
 # The producer's real cost per owner message: the prototype's hand run measured $0.40 for a
 # three-message session and this eval's first session $0.81 for four (Nov 24).
-USD_PER_MESSAGE = Decimal("0.20")
+USD_PER_MESSAGE = Decimal("0.09")
 # Spending past this times the estimate stops the run.
 STOP_AT = Decimal("1.5")
 BACKEND = Path(__file__).resolve().parents[2]

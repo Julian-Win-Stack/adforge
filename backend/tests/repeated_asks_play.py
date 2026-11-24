@@ -185,11 +185,17 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
     film = _in_words(FILM, shop)
 
     turns: dict[int, int] = {}
+    broken: set[int] = set()
 
     def scene_agent(request: TurnRequest) -> Turn:
         run = _current_run()
         code_run = run is not None and any(TALKING in quote for quote in run.quotes)
-        if script.now >= 0 and not code_run and script.message.ending == "gives_up":
+        ending = script.message.ending if script.now >= 0 else "passes"
+        if not code_run and ending == "breaks" and script.now not in broken:
+            # The message's first run fails for a technical reason, before any clip.
+            broken.add(script.now)
+            raise RuntimeError("Faked technical failure: the video service stopped answering.")
+        if not code_run and ending in ("gives_up", "breaks"):
             return turn(calls=[("give_up", {"reason": script.message.reason})])
         drawn = [
             event
@@ -383,7 +389,29 @@ def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, 
         ],
         "system_notes": [{"kind": note.kind, "text": note.text} for note in notes],
         "runs": [_run(run) for run in runs],
+        # Every "I had to stop for a moment" cut-off, with its developer reason.
+        "cut_offs": _cut_offs(session, before),
     }
+
+
+def _cut_offs(session: Session, before: Before) -> list[str]:
+    from chat.models import Message
+
+    stopped = session.messages.filter(seq__gt=before.seq, role=Message.Role.NOTICE).filter(
+        text__startswith="I had to stop for a moment"
+    )
+    if not stopped.exists():
+        return []
+    job = session.jobs.first()
+    since = session.messages.filter(seq=before.seq + 1).values_list("created_at", flat=True)
+    start = since.first()
+    why = [
+        str(warning.get("text", ""))
+        for warning in (job.warnings if job is not None else [])
+        if warning.get("kind") == "producer_gave_up"
+        and (start is None or str(warning.get("at", "")) >= start.isoformat())
+    ]
+    return why or ["(no developer reason recorded)"] * stopped.count()
 
 
 def _run(run: SceneAgentRun) -> dict[str, Any]:
@@ -403,10 +431,20 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         else run.agent_fix.step.tool_call.tool
     )
     problem = next(
-        (quote["problem"] for quote in quotes if isinstance(quote.get("problem"), int)), None
+        (
+            quote.get("thing", quote.get("problem"))
+            for quote in quotes
+            if isinstance(quote.get("thing", quote.get("problem")), int)
+        ),
+        None,
     )
+    try:
+        broke = importlib.import_module("agents.owner_problems").broke(run)
+    except ImportError:
+        broke = False
     return {
         "scene": run.agent_fix.step.scene.number,
+        "broke": broke,
         "instruction": run.instruction,
         "origin": origin,
         "retry": any(RETRY in quote for quote in quotes),
