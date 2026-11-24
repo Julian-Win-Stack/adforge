@@ -15,6 +15,11 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name='toolcall',
+            name='read_up_to',
+            field=models.PositiveIntegerField(blank=True, help_text='Last chat message sequence seen when the agent chose this tool.', null=True),
+        ),
+        migrations.AddField(
+            model_name='toolcall',
             name='scene_run',
             field=models.ForeignKey(blank=True, help_text='The run this scene-agent tool or turn was charged to, if recorded.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='charged_tools', to='jobs.sceneagentrun'),
         ),

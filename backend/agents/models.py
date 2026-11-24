@@ -35,6 +35,11 @@ class ToolCall(models.Model):
         related_name="charged_tools",
         help_text="The run this scene-agent tool or turn was charged to, if recorded.",
     )
+    read_up_to = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Last chat message sequence seen when the agent chose this tool.",
+    )
     tool = models.CharField(max_length=50)
     call_id = models.CharField(
         max_length=200, help_text="The model's id for the call, which pairs it with its result."

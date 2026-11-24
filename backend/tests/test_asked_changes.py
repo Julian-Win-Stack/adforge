@@ -219,3 +219,28 @@ def test_a_reordered_scene_keeps_its_tries_and_a_scene_number_does_not(
     assert "try 1" in record["asks"][3]["tool_calls"][0]["result"]
     scenes = asked_changes.summary(Session.objects.get())[0]["scenes"]
     assert [(scene["scene"], scene["tries"]) for scene in scenes] == [(1, 2), (2, 1)]
+
+
+def test_a_note_answers_the_message_the_producer_had_read_before_its_turn(
+    say: Callable[..., None],
+    playing: Playing,  # noqa: F811
+) -> None:
+    first = OwnerMessage("Move closer to the product.", "passes", "The product is closer.")
+    later = "Keep the original music."
+
+    def note_from_the_earlier_turn() -> Turn:
+        say(later)
+        return turn(calls=[filed_note(2, first.say, new_asked_change=first.say)])
+
+    record = playing(
+        tiny("healthy-01-brush", first),
+        [
+            [note_from_the_earlier_turn, turn(says="I'll keep the music.")],
+            [turn(says="Here is the new shot.")],
+        ],
+    )
+
+    assert record["error"] == ""
+    assert len(record["asks"][0]["runs"]) == 1
+    captured = asked_changes.summary(Session.objects.get())[0]["scenes"][0]["asks"]
+    assert [ask["message"] for ask in captured] == [first.say]

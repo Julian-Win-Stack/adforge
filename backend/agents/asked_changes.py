@@ -15,14 +15,13 @@ from jobs.models import AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneSt
 
 
 def owner_message_for(call: ToolCall) -> Message | None:
-    """The ask the tool answers, even if it quotes earlier words."""
-    return (
-        call.session.messages.filter(
-            role=Message.Role.USER, pasted_page=False, created_at__lte=call.created_at
-        )
-        .order_by("seq")
-        .last()
-    )
+    """The last owner message the agent read, even if it quotes earlier words."""
+    messages = call.session.messages.filter(role=Message.Role.USER, pasted_page=False)
+    if call.read_up_to is None:
+        messages = messages.filter(created_at__lte=call.created_at)
+    else:
+        messages = messages.filter(seq__lte=call.read_up_to)
+    return messages.order_by("seq").last()
 
 
 def file_note(
