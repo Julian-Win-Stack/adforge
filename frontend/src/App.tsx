@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Chat } from "./Chat";
 import { SessionList, sessionTitle } from "./SessionList";
 import { listFolders, listSessions, type Folder, type Session } from "./api";
+
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_STEP = 16;
 
 export function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -12,6 +16,16 @@ export function App() {
   const [copied, setCopied] = useState<{ id: string; from: string } | null>(null);
   const [copiedAfter, setCopiedAfter] = useState<Record<string, string>>({});
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow());
+  const [sidebarWidth, setSidebarWidth] = useState(272);
+  const [sidebarDrag, setSidebarDrag] = useState<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  function resizeSidebar(width: number) {
+    setSidebarWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
+  }
 
   useEffect(() => {
     listSessions()
@@ -65,7 +79,11 @@ export function App() {
   }
 
   return (
-    <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+    <div
+      className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
+      data-resizing={sidebarDrag !== null || undefined}
+      style={{ "--session-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
       {error && (
         <p role="alert" className="notice info app-error">
           {error}
@@ -84,7 +102,57 @@ export function App() {
         onFolderRemoved={forgetFolder}
         onHide={() => setSidebarOpen(false)}
       />
-      {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
+      {sidebarOpen && (
+        <>
+          <div
+            className="sidebar-resize"
+            role="separator"
+            tabIndex={0}
+            aria-label="Resize sessions sidebar"
+            aria-orientation="vertical"
+            aria-controls="session-sidebar"
+            aria-valuemin={SIDEBAR_MIN}
+            aria-valuemax={SIDEBAR_MAX}
+            aria-valuenow={sidebarWidth}
+            onPointerDown={(event) => {
+              if (event.button !== 0 || !event.isPrimary) return;
+              event.preventDefault();
+              event.currentTarget.focus({ preventScroll: true });
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setSidebarDrag({
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startWidth: sidebarWidth,
+              });
+            }}
+            onPointerMove={(event) => {
+              if (sidebarDrag?.pointerId !== event.pointerId) return;
+              resizeSidebar(sidebarDrag.startWidth + event.clientX - sidebarDrag.startX);
+            }}
+            onLostPointerCapture={() => setSidebarDrag(null)}
+            onKeyDown={(event) => {
+              switch (event.key) {
+                case "ArrowLeft":
+                  resizeSidebar(sidebarWidth - SIDEBAR_STEP);
+                  break;
+                case "ArrowRight":
+                  resizeSidebar(sidebarWidth + SIDEBAR_STEP);
+                  break;
+                case "Home":
+                  resizeSidebar(SIDEBAR_MIN);
+                  break;
+                case "End":
+                  resizeSidebar(SIDEBAR_MAX);
+                  break;
+                default:
+                  return;
+              }
+              event.preventDefault();
+            }}
+          />
+          <div className="backdrop" onClick={() => setSidebarOpen(false)} />
+        </>
+      )}
       <Chat
         key={openId ?? "new"}
         sessionId={openId}
