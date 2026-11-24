@@ -117,7 +117,7 @@ from .current_limits import current_limits
 from .hard_limits import hard_limits
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
-from .models import ToolCall
+from .models import AskedChangeFiling, ToolCall
 from .money import dollars
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
@@ -262,6 +262,12 @@ to every scene as well as that scene's own words; respect corrections across mes
 Pass the note even while an agent works: it opens a fresh run in its same chat, remembers
 earlier work and reads the note before its next tool. Never take a later thanks as the
 note. Use pass_note for an idle scene too, and after the pause is released.
+For each owner_asked scene note, file what the owner wants: give the number of the asked
+change if their desired result is already on file, or give one plain sentence in new_asked_change
+saying the new result they want. Use one of these fields. A different way of getting the same
+result still belongs to the existing asked change. Use the tool's answer when it says which
+asked changes are on file. Supplying files or answering a scene's question without asking for a
+different result is a reply to the scene, so it needs no filing.
 Set owner_asked on scene notes and plan edits only when the owner asked for that change; leave it
 off for your own re-plan, as after a give-up.
 Slower can't be done: every clip plays at real-time speed.
@@ -1389,6 +1395,8 @@ def _hand_the_answer_back(
     question: OwnerQuestion,
     instruction: str,
     checked_quotes: list[dict[str, Any]] | None = None,
+    *,
+    asked_filing: AskedChangeFiling | None = None,
 ) -> str:
     """Hand the shop owner's answer to the fixing agent's question to the scene's fix (spec
     #247 point 11, as the round 7 spec's section 4 changed it): every message they wrote since
@@ -1414,6 +1422,7 @@ def _hand_the_answer_back(
             instruction=instruction,
             checked_quotes=checked_quotes,
             handoff_call=call,
+            asked_filing=asked_filing,
         )
     except ValueError:
         raise Refused(

@@ -14,7 +14,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from agents.models import ToolCall
+from agents.models import AskedChangeFiling, ToolCall
 from chat.models import Attachment, Message
 
 from . import cut_out, library_items, notices, product_videos, reference_photos, watcher, work
@@ -50,6 +50,7 @@ def answer(
     instruction: str = "",
     checked_quotes: list[dict[str, Any]] | None = None,
     handoff_call: ToolCall | None = None,
+    asked_filing: AskedChangeFiling | None = None,
 ) -> Handed:
     """Hand the shop owner's answer to `question` on: their `words`, and the keys in the
     file store of the `photos` and `videos` they sent with them, and the producer's
@@ -65,13 +66,15 @@ def answer(
     words = words.strip()
     if not (words or photos or videos):
         raise ValueError("an answer has words, a photo or a video")
-    given = {
+    given: dict[str, Any] = {
         "words": words,
         "photos": list(photos),
         "videos": list(videos),
         "instruction": instruction.strip(),
         "quotes": checked_quotes or [],
     }
+    if asked_filing is not None:
+        given["asked_filing"] = asked_filing.pk
     with transaction.atomic():
         # The job, then the chat, as every writer of a step's end locks them.
         job = Job.objects.select_for_update().get(pk=question.scene.job_id)
@@ -86,8 +89,9 @@ def answer(
             found.save(update_fields=["answer", "answered_at"])
             return Handed("nothing")
         fixing = AgentFix.objects.get(pk=found.agent_fix_id)
-        if not fixing.is_scene_agent:
-            # Keep this question's historical provenance; deliver through a real current run.
+        if not fixing.is_scene_agent or (asked_filing is not None and fixing.finished_at is None):
+            # Historical questions and answers with fresh requests go through the normal
+            # note window, so a fresh owner ask has a run of its own.
             if handoff_call is None or not checked_quotes:
                 raise ValueError("hand the answer through pass_note with checked owner quotes")
             from agents.scene_tools import SceneNote, open_note
@@ -101,6 +105,7 @@ def answer(
                 ),
                 found.scene,
                 checked_quotes,
+                asked_filing=asked_filing,
             )
             if isinstance(target, str):
                 return Handed("waiting", (target,))

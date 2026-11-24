@@ -71,7 +71,17 @@ def test_swapping_restores_the_clip_and_scene_without_paying_again(
         note,
         (
             "pass_note",
-            {"scenes": [{"scene": 2, "instruction": note, "quotes": [note], "owner_asked": True}]},
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": note,
+                        "quotes": [note],
+                        "owner_asked": True,
+                        "new_asked_change": note,
+                    }
+                ]
+            },
         ),
     )
     run(fake_model, steps)
@@ -241,6 +251,7 @@ def test_giving_up_a_legacy_run_clears_the_newer_scripts_owner_words(
                         "instruction": note,
                         "quotes": [note],
                         "owner_asked": True,
+                        "new_asked_change": note,
                     }
                 ]
             },

@@ -38,7 +38,13 @@ def note(fake_model: FakeModel, say: Callable[..., None], words: str, *, scene: 
             "pass_note",
             {
                 "scenes": [
-                    {"scene": scene, "instruction": words, "quotes": [words], "owner_asked": True}
+                    {
+                        "scene": scene,
+                        "instruction": words,
+                        "quotes": [words],
+                        "owner_asked": True,
+                        "new_asked_change": words,
+                    }
                 ]
             },
         ),

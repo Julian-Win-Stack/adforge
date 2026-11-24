@@ -212,6 +212,9 @@ CREATIFY_TIMEOUT_SECONDS = 120.0
 # the normal case; more is proposed only (spec #210 audit item 7, not approved yet).
 BROLL_MOST_PIECES = 1
 
+# Paid scene runs available for the same asked change in one session.
+ASKED_CHANGE_TRY_LIMIT = int(os.environ.get("ASKED_CHANGE_TRY_LIMIT", "3"))
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # Where videos are watched. Tests point it at a local stand-in.
 GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")

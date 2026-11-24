@@ -671,6 +671,8 @@ def _do_the_work(step: SceneStep, session: Session, work: StepWork) -> None:
             logger.exception("Scene step %s failed", step_id)
         tracing.flush()
         with transaction.atomic():
+            if step.kind == SceneStep.Kind.SCENE_AGENT:
+                Job.objects.select_for_update().get(pk=step.scene.job_id)
             if not _still_running(step):
                 return
             _fail(
@@ -824,6 +826,10 @@ def _fail(
         "can help."
     )
     step.finished_at = timezone.now()
+    if step.kind == SceneStep.Kind.SCENE_AGENT:
+        from .asked_changes import run_failed
+
+        step.result += run_failed(step)
     step.save(update_fields=["status", "reason", "result", "finished_at"])
     if plainly is not None:
         step_signals.say_not_made(step, plainly, owner_can_help=owner_can_help)

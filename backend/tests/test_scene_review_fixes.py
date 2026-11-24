@@ -184,6 +184,7 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
                                 "instruction": "Use this view.",
                                 "quotes": ["Here is the missing view."],
                                 "owner_asked": True,
+                                "new_asked_change": "Here is the missing view.",
                             }
                         ]
                     },

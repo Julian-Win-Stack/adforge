@@ -36,6 +36,21 @@ _Avoid_: Request, prompt, order
 An exact chunk of the shop owner's own message that the producer passes with its instruction to a scene agent. Code checks it against an owner message and keeps which message it came from.
 _Avoid_: Summary, instruction, paraphrase
 
+**Asked change**:
+One result the shop owner asked for on their ad. The producer files it when it passes the owner's note. It can cover one scene or several.
+
+**Try**:
+A run opened for an owner-asked note on one scene of an asked change. It counts against that scene's limit. A technical failure with no clip uses no try.
+
+**Closed**:
+An asked change that has used every try on a scene. Filming for that change on that scene ends for the rest of the session.
+
+**Try history**:
+What code tells the producer when the owner repeats an asked change. It includes what each earlier try did, how it ended and what it cost.
+
+**Ways out**:
+The three choices the producer offers when a scene of a change spanning several scenes closes.
+
 **Interrupt**:
 A message that arrives while the producer is working. The producer decides what it means for work already in flight.
 _Avoid_: Cancel, abort

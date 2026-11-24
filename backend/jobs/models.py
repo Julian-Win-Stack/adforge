@@ -1480,7 +1480,21 @@ class AgentFix(models.Model):
 class SceneAgentRun(models.Model):
     """A scene conversation's instruction and independent picture/clip allowance."""
 
+    SUPERSEDED = "Superseded by a new owner note."
+    PENDING_DELIVERED = "Handed to the next scene step."
+
     agent_fix = models.ForeignKey(AgentFix, on_delete=models.CASCADE, related_name="scene_runs")
+    asked_filing = models.ForeignKey(
+        "agents.AskedChangeFiling",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="runs",
+        help_text="The owner ask this window answers, via its asked change and scene.",
+    )
+    step_failed = models.BooleanField(
+        db_default=False, help_text="Its scene step failed while this run was active."
+    )
     number = models.PositiveIntegerField()
     instruction = models.TextField()
     quotes = models.JSONField(default=list, blank=True)

@@ -27,6 +27,14 @@ class ToolCall(models.Model):
         related_name="tool_calls",
         help_text="For the fixing agent, the scene fix it called the tool for. Blank otherwise.",
     )
+    scene_run = models.ForeignKey(
+        "jobs.SceneAgentRun",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="charged_tools",
+        help_text="The run this scene-agent tool or turn was charged to, if recorded.",
+    )
     tool = models.CharField(max_length=50)
     call_id = models.CharField(
         max_length=200, help_text="The model's id for the call, which pairs it with its result."
@@ -187,3 +195,77 @@ class PlannerQuestion(models.Model):
 
     def __str__(self) -> str:
         return f"Planning question from {self.plan_call}"
+
+
+class AskedChange(models.Model):
+    """One outcome the shop owner requested during a session."""
+
+    session = models.ForeignKey(
+        "chat.Session", on_delete=models.CASCADE, related_name="asked_changes"
+    )
+    number = models.PositiveIntegerField()
+    description = models.TextField()
+
+    class Meta:
+        ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(fields=["session", "number"], name="unique_asked_change_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"Asked change #{self.number}: {self.description}"
+
+
+class AskedChangeScene(models.Model):
+    """A scene covered by an asked change, with its clip before the change."""
+
+    change = models.ForeignKey(AskedChange, on_delete=models.CASCADE, related_name="coverage")
+    scene = models.ForeignKey("jobs.Scene", on_delete=models.CASCADE, related_name="asked_changes")
+    before_clip = models.ForeignKey(
+        "jobs.ProducedItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["change", "scene"], name="unique_asked_change_scene")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.change}, scene {self.scene.number}"
+
+
+class AskedChangeFiling(models.Model):
+    """One producer filing of an owner's ask, including one that opened no run."""
+
+    coverage = models.ForeignKey(AskedChangeScene, on_delete=models.CASCADE, related_name="filings")
+    owner_message = models.ForeignKey("chat.Message", on_delete=models.CASCADE, related_name="+")
+    tool_call = models.ForeignKey(ToolCall, on_delete=models.CASCADE, related_name="+")
+    instruction = models.TextField()
+    refusal = models.TextField(blank=True, db_default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["coverage", "tool_call"], name="unique_asked_change_filing"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.coverage}, owner message {self.owner_message.seq}"
+
+
+class AskedChangeBrief(models.Model):
+    """A scene whose try history was shown for this owner message."""
+
+    scene = models.ForeignKey("jobs.Scene", on_delete=models.CASCADE, related_name="+")
+    owner_message = models.ForeignKey("chat.Message", on_delete=models.CASCADE, related_name="+")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scene", "owner_message"], name="unique_asked_change_brief"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Try history for scene {self.scene.number}, owner message {self.owner_message.seq}"
