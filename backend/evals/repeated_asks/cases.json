@@ -1,0 +1,1481 @@
+{
+ "shops": {
+  "brush": {
+   "product": "Glide Detangling Brush",
+   "brand": "Tessa Hair",
+   "price": "18.00",
+   "page_text": "Flexible bristles glide through wet or dry hair without pulling.",
+   "colour": "pink",
+   "real_size": "about 22 cm long",
+   "behaviour": "Its flexible bristles bend and part the hair as it is pulled down from root to tip.",
+   "person": "A woman in her twenties with long wavy brown hair, in a bright bathroom.",
+   "lines": [
+    "Meet the Glide Detangling Brush from Tessa Hair, made for knots on wet or dry hair.",
+    "Its flexible bristles glide through wet or dry hair without pulling, every single morning.",
+    "Get your Glide Detangling Brush today for just $18.00 from Tessa Hair, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the brush to the lens",
+    "the brush glides down through long wet hair",
+    "the presenter brushes her hair"
+   ]
+  },
+  "cream": {
+   "product": "Cloud Whip Face Cream",
+   "brand": "Lumen Skin",
+   "price": "32.00",
+   "page_text": "A light whipped cream that melts into skin and leaves no shine.",
+   "colour": "white jar with a gold lid",
+   "real_size": "50 ml jar, about 7 cm wide",
+   "behaviour": "The thick white cream thins and disappears into the skin as it is rubbed in.",
+   "person": "A woman in her thirties with clear skin, in a calm white bathroom.",
+   "lines": [
+    "Meet Cloud Whip Face Cream from Lumen Skin, the light cream for soft skin every day.",
+    "This light whipped cream melts into your skin and leaves no shine at all, morning or night.",
+    "Get your Cloud Whip Face Cream today for just $32.00 from Lumen Skin, and feel the difference."
+   ],
+   "shows": [
+    "the presenter holds up the jar",
+    "fingers rub a dab of cream into a cheek until it disappears",
+    "the presenter pats her face"
+   ]
+  },
+  "floss": {
+   "product": "Mint Ribbon Floss",
+   "brand": "Brightbite",
+   "price": "6.00",
+   "page_text": "A soft mint floss that slides between tight teeth without shredding.",
+   "colour": "mint green case",
+   "real_size": "small round case, about 5 cm wide",
+   "behaviour": "The thin floss bends around each tooth and slides down between tight teeth.",
+   "person": "A man in his twenties with a bright smile, at a bathroom mirror.",
+   "lines": [
+    "Meet Mint Ribbon Floss from Brightbite, the soft floss for a fresh clean smile.",
+    "It slides between tight teeth without shredding, so flossing feels quick and easy every night.",
+    "Get your Mint Ribbon Floss today for just $6.00 from Brightbite, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the floss case to the lens",
+    "a length of floss slides down between two front teeth",
+    "the presenter smiles at the mirror"
+   ]
+  },
+  "bottle": {
+   "product": "Trailmate Bottle",
+   "brand": "Northpeak",
+   "price": "28.00",
+   "page_text": "A steel bottle with a flip handle that keeps water cold for 24 hours.",
+   "colour": "forest green",
+   "real_size": "750 ml, about 26 cm tall",
+   "behaviour": "The flip handle swings up from the lid and stops upright, so the bottle hangs from one finger.",
+   "person": "A woman in her thirties in hiking clothes, at a sunny trailhead.",
+   "lines": [
+    "Meet the Trailmate Bottle from Northpeak, the steel bottle made for long days outside.",
+    "Flip up the handle and carry it on one finger, and your water stays cold for 24 hours.",
+    "Get your Trailmate Bottle today for just $28.00 from Northpeak, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the bottle to the lens",
+    "a finger flips the handle up and lifts the bottle",
+    "the presenter drinks from the bottle"
+   ]
+  },
+  "roller": {
+   "product": "Chill Stone Face Roller",
+   "brand": "Velia",
+   "price": "24.00",
+   "page_text": "A cool jade roller that glides over skin to calm puffiness.",
+   "colour": "pale green stone on a gold frame",
+   "real_size": "about 15 cm long",
+   "behaviour": "The stone barrel turns on its frame as the roller is pushed over the skin.",
+   "person": "A woman in her twenties with a towel in her hair, at a vanity.",
+   "lines": [
+    "Meet the Chill Stone Face Roller from Velia, a cool calm start to every morning.",
+    "The cool jade roller glides over your skin to calm puffiness in just a few minutes.",
+    "Get your Chill Stone Face Roller today for just $24.00 from Velia, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the roller to the lens",
+    "the roller glides up a cheek",
+    "the presenter rolls her jaw"
+   ]
+  },
+  "lens": {
+   "product": "Orbit Lens Clip",
+   "brand": "Snapkit",
+   "price": "22.00",
+   "page_text": "A clip-on macro lens that turns any phone into a close-up camera.",
+   "colour": "black",
+   "real_size": "clip about 4 cm wide",
+   "behaviour": "The clip opens, grips the phone's corner over the camera and holds still.",
+   "person": "A man in his twenties with a camera bag, in a plant-filled studio.",
+   "lines": [
+    "Meet the Orbit Lens Clip from Snapkit, the easy way to shoot close-ups on your phone.",
+    "Clip it on and any phone becomes a close-up camera for flowers, food and tiny details.",
+    "Get your Orbit Lens Clip today for just $22.00 from Snapkit, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the clip to the lens",
+    "the clip snaps onto a phone's corner over its camera",
+    "the presenter shoots a flower close up"
+   ]
+  },
+  "speaker": {
+   "product": "Pebble Speaker",
+   "brand": "Hush Audio",
+   "price": "45.00",
+   "page_text": "A palm-sized speaker with a rubber base that sits steady on any table.",
+   "colour": "sand grey",
+   "real_size": "about 9 cm wide",
+   "behaviour": "It lands flat on its rubber base and stays put without rolling.",
+   "person": "A woman in her twenties, in a cosy living room.",
+   "lines": [
+    "Meet the Pebble Speaker from Hush Audio, a palm-sized speaker with big clear sound.",
+    "Its rubber base sits steady on any table, so the music plays on wherever you set it down.",
+    "Get your Pebble Speaker today for just $45.00 from Hush Audio, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the speaker to the lens",
+    "the speaker is set down onto a wooden table",
+    "the presenter taps play and smiles"
+   ]
+  },
+  "vacuum": {
+   "product": "Crumb Hand Vacuum",
+   "brand": "Tidyhome",
+   "price": "39.00",
+   "page_text": "A cordless hand vacuum that lifts crumbs from tables and car seats in seconds.",
+   "colour": "white and teal",
+   "real_size": "about 30 cm long",
+   "behaviour": "Crumbs are sucked up into the nozzle and the surface behind it is left clean.",
+   "person": "A man in his thirties, in a bright kitchen.",
+   "lines": [
+    "Meet the Crumb Hand Vacuum from Tidyhome, the quick fix for crumbs all over the house.",
+    "It lifts crumbs from tables and car seats in seconds, and it runs without a cord.",
+    "Get your Crumb Hand Vacuum today for just $39.00 from Tidyhome, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the vacuum to the lens",
+    "the vacuum passes over crumbs on a table and leaves it clean",
+    "the presenter puts the vacuum on its stand"
+   ]
+  }
+ },
+ "cases": [
+  {
+   "id": "impossible-fails-01-brush",
+   "kind": "impossible_check_fails",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "gives_up",
+     "reason": "The video model keeps drawing the bristles on top of the hair; it can't make them pass into the hair.",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-02-brush",
+   "kind": "impossible_check_fails",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 3: she switches the brush to her other hand halfway. Keep it in the same hand the whole time.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    },
+    {
+     "say": "The brush jumps from her right hand to her left in scene 3. Same hand please.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    },
+    {
+     "say": "Scene 3 still has the hand swap. One hand, start to finish.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    },
+    {
+     "say": "Please, scene 3: the brush can't change hands. Keep it in one hand.",
+     "ending": "gives_up",
+     "reason": "Every clip swaps the brush to the other hand mid-stroke; the video model won't keep it in one hand.",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-03-cream",
+   "kind": "impossible_check_fails",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "gives_up",
+     "reason": "The video model can't make the cream thin out and vanish; it stays a white layer on the skin.",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-04-floss",
+   "kind": "impossible_check_fails",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss is stiff like a stick. It should bend around the tooth like real floss.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    },
+    {
+     "say": "The floss in scene 2 still looks like a rod. Make it move like actual floss.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    },
+    {
+     "say": "Scene 2 again: the floss doesn't curve around the teeth. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    },
+    {
+     "say": "Still a stiff line in scene 2. Real floss bends. Make it bend.",
+     "ending": "gives_up",
+     "reason": "Each clip draws the floss as a straight rigid line; the video model can't make it wrap a tooth.",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-05-roller",
+   "kind": "impossible_check_fails",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller just slides, the stone never turns. It should roll as it goes up her cheek.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    },
+    {
+     "say": "In scene 2 the roller's stone still doesn't spin. It needs to actually roll.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    },
+    {
+     "say": "Scene 2 again: it's sliding, not rolling. Make the stone turn.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    },
+    {
+     "say": "The roller in scene 2 still doesn't roll. Please make the stone turn as it moves.",
+     "ending": "gives_up",
+     "reason": "The video model moves the roller as one solid piece; it can't turn the stone on its frame.",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-06-bottle",
+   "kind": "impossible_check_fails",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the handle flips way past upright and folds back down. It should stop straight up like the real one.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    },
+    {
+     "say": "In scene 2 the handle still swings too far. It has to stop at the top.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    },
+    {
+     "say": "Scene 2 again: the handle keeps going past its stopping point. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    },
+    {
+     "say": "The handle in scene 2 still over-rotates. The real one stops upright.",
+     "ending": "gives_up",
+     "reason": "Each clip swings the handle past upright; the video model can't stop it at its normal point.",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-07-speaker",
+   "kind": "impossible_check_fails",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: when she sets the speaker down it flips over. It should land flat and stay put.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    },
+    {
+     "say": "In scene 2 the speaker still tumbles when it hits the table. It needs to land flat.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    },
+    {
+     "say": "Scene 2 again: it flips on landing. Make it sit still on its base.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    },
+    {
+     "say": "The speaker in scene 2 still rolls over when it lands. Please fix that.",
+     "ending": "gives_up",
+     "reason": "Every clip has the speaker tip and roll on landing; the video model can't keep it flat.",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-08-lens",
+   "kind": "impossible_check_fails",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "gives_up",
+     "reason": "Every clip bends the phone's edge where the clip grips it; the video model can't keep it rigid.",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-09-cream",
+   "kind": "impossible_check_fails",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 3: the jar lid melts into the jar when she closes it. It should screw on like a normal lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    },
+    {
+     "say": "In scene 3 the lid still merges into the jar. It needs to twist on and stay a separate lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    },
+    {
+     "say": "Scene 3 again: the lid and jar blend together. Make it a real lid.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    },
+    {
+     "say": "The lid in scene 3 still melts into the jar. Please fix it.",
+     "ending": "gives_up",
+     "reason": "Each clip merges the lid into the jar as it closes; the video model can't keep them apart.",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    }
+   ]
+  },
+  {
+   "id": "impossible-fails-10-vacuum",
+   "kind": "impossible_check_fails",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the crumbs fly toward the nozzle and then reappear behind it. They should just get sucked up.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    },
+    {
+     "say": "In scene 2 the crumbs still come back after the vacuum passes. They need to disappear.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    },
+    {
+     "say": "Scene 2 again: crumbs reappear behind the vacuum. Fix it please.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    },
+    {
+     "say": "Crumbs still pop back up in scene 2. They should be gone.",
+     "ending": "gives_up",
+     "reason": "Every clip makes the crumbs reappear behind the nozzle; the video model can't keep them gone.",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-01-brush",
+   "kind": "impossible_check_passes",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush just slides over the top of the hair. I want it to actually go through the hair, like a real brush.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    },
+    {
+     "say": "In scene 2 the brush still floats over the hair. It needs to really part the hair as it goes down.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    },
+    {
+     "say": "Scene 2 again: the bristles never go into the hair. Please make the brush go through it naturally.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    },
+    {
+     "say": "Still not right in scene 2. The brush has to go through the hair, not skim the surface.",
+     "ending": "passes_missing",
+     "look": "The brush moves down over the hair, but the bristles stay on top of it and the hair doesn't part."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-02-brush",
+   "kind": "impossible_check_passes",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 3: she switches the brush to her other hand halfway. Keep it in the same hand the whole time.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    },
+    {
+     "say": "The brush jumps from her right hand to her left in scene 3. Same hand please.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    },
+    {
+     "say": "Scene 3 still has the hand swap. One hand, start to finish.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    },
+    {
+     "say": "Please, scene 3: the brush can't change hands. Keep it in one hand.",
+     "ending": "passes_missing",
+     "look": "Halfway through, the brush moves from her right hand to her left hand."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-03-cream",
+   "kind": "impossible_check_passes",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the cream just sits on her cheek as a white blob. It should melt into the skin as she rubs it in.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    },
+    {
+     "say": "In scene 2 the cream still doesn't absorb. I need to see it disappear into the skin.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    },
+    {
+     "say": "Scene 2 again: the white cream stays on top of the skin. Make it melt in.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    },
+    {
+     "say": "The cream in scene 2 still never sinks in. That's the whole point of the product.",
+     "ending": "passes_missing",
+     "look": "Her fingers rub the cheek, but the cream stays a white patch on the skin to the end."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-04-floss",
+   "kind": "impossible_check_passes",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss is stiff like a stick. It should bend around the tooth like real floss.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    },
+    {
+     "say": "The floss in scene 2 still looks like a rod. Make it move like actual floss.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    },
+    {
+     "say": "Scene 2 again: the floss doesn't curve around the teeth. Please fix it.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    },
+    {
+     "say": "Still a stiff line in scene 2. Real floss bends. Make it bend.",
+     "ending": "passes_missing",
+     "look": "The floss stays a straight rigid line and never curves around the tooth."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-05-roller",
+   "kind": "impossible_check_passes",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller just slides, the stone never turns. It should roll as it goes up her cheek.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    },
+    {
+     "say": "In scene 2 the roller's stone still doesn't spin. It needs to actually roll.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    },
+    {
+     "say": "Scene 2 again: it's sliding, not rolling. Make the stone turn.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    },
+    {
+     "say": "The roller in scene 2 still doesn't roll. Please make the stone turn as it moves.",
+     "ending": "passes_missing",
+     "look": "The roller moves up the cheek but the stone stays still on its frame; it slides rather than rolls."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-06-bottle",
+   "kind": "impossible_check_passes",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the handle flips way past upright and folds back down. It should stop straight up like the real one.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    },
+    {
+     "say": "In scene 2 the handle still swings too far. It has to stop at the top.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    },
+    {
+     "say": "Scene 2 again: the handle keeps going past its stopping point. Fix it please.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    },
+    {
+     "say": "The handle in scene 2 still over-rotates. The real one stops upright.",
+     "ending": "passes_missing",
+     "look": "The handle swings up, passes upright and folds over the far side of the lid."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-07-speaker",
+   "kind": "impossible_check_passes",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: when she sets the speaker down it flips over. It should land flat and stay put.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    },
+    {
+     "say": "In scene 2 the speaker still tumbles when it hits the table. It needs to land flat.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    },
+    {
+     "say": "Scene 2 again: it flips on landing. Make it sit still on its base.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    },
+    {
+     "say": "The speaker in scene 2 still rolls over when it lands. Please fix that.",
+     "ending": "passes_missing",
+     "look": "The speaker touches the table, tips onto its side and rolls half a turn."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-08-lens",
+   "kind": "impossible_check_passes",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone bends when the clip goes on. Phones don't bend. Make it stay solid.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    },
+    {
+     "say": "In scene 2 the phone still warps under the clip. It needs to stay rigid.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    },
+    {
+     "say": "Scene 2 again: the phone bends like rubber. Please fix it.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    },
+    {
+     "say": "Still a bendy phone in scene 2. It should be a solid phone.",
+     "ending": "passes_missing",
+     "look": "Where the clip closes, the phone's corner bends in like soft rubber."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-09-cream",
+   "kind": "impossible_check_passes",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 3: the jar lid melts into the jar when she closes it. It should screw on like a normal lid.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    },
+    {
+     "say": "In scene 3 the lid still merges into the jar. It needs to twist on and stay a separate lid.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    },
+    {
+     "say": "Scene 3 again: the lid and jar blend together. Make it a real lid.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    },
+    {
+     "say": "The lid in scene 3 still melts into the jar. Please fix it.",
+     "ending": "passes_missing",
+     "look": "As the lid comes down it blends into the jar's rim and the two become one shape."
+    }
+   ]
+  },
+  {
+   "id": "impossible-passes-10-vacuum",
+   "kind": "impossible_check_passes",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: the crumbs fly toward the nozzle and then reappear behind it. They should just get sucked up.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    },
+    {
+     "say": "In scene 2 the crumbs still come back after the vacuum passes. They need to disappear.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    },
+    {
+     "say": "Scene 2 again: crumbs reappear behind the vacuum. Fix it please.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    },
+    {
+     "say": "Crumbs still pop back up in scene 2. They should be gone.",
+     "ending": "passes_missing",
+     "look": "The nozzle passes the crumbs, which reappear on the table behind it."
+    }
+   ]
+  },
+  {
+   "id": "hard-01-lens",
+   "kind": "hard_but_possible",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the camera zooms in on the clip and then pulls back out. Stay zoomed in.",
+     "ending": "passes_missing",
+     "look": "The camera moves in on the clip, then pulls back out to a wide shot."
+    },
+    {
+     "say": "In scene 2 it still zooms back out at the end. Keep it close the whole time.",
+     "ending": "passes_missing",
+     "look": "The camera moves in on the clip, then pulls back out to a wide shot."
+    },
+    {
+     "say": "Scene 2 again: please stay zoomed in on the clip, no pulling back.",
+     "ending": "passes",
+     "look": "The camera moves in on the clip and stays close to the end."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The camera moves in on the clip and stays close to the end."
+    }
+   ]
+  },
+  {
+   "id": "hard-02-bottle",
+   "kind": "hard_but_possible",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the bottle has two handles. It only has one.",
+     "ending": "passes_missing",
+     "look": "The bottle's lid shows a second handle beside the real one."
+    },
+    {
+     "say": "Scene 2 still shows an extra handle on the bottle. Just one handle.",
+     "ending": "passes_missing",
+     "look": "The bottle's lid shows a second handle beside the real one."
+    },
+    {
+     "say": "Scene 2 again: there's still a second handle. Please remove it.",
+     "ending": "passes",
+     "look": "The bottle has one handle on the lid, as on the page photos."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The bottle has one handle on the lid, as on the page photos."
+    }
+   ]
+  },
+  {
+   "id": "hard-03-vacuum",
+   "kind": "hard_but_possible",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: after the vacuum cleans the table, the crumbs show up again at the end. The table should stay clean.",
+     "ending": "passes_missing",
+     "look": "The table is clean after the pass, then crumbs show up again in the last second."
+    },
+    {
+     "say": "In scene 2 the cleaned table gets dirty again at the end. Keep it clean.",
+     "ending": "passes_missing",
+     "look": "The table is clean after the pass, then crumbs show up again in the last second."
+    },
+    {
+     "say": "Scene 2 again: the table should stay clean once it's vacuumed.",
+     "ending": "passes",
+     "look": "The table is clean after the pass and stays clean to the end."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The table is clean after the pass and stays clean to the end."
+    }
+   ]
+  },
+  {
+   "id": "hard-04-roller",
+   "kind": "hard_but_possible",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 3: she's lying on her side. She should be lying on her back for this.",
+     "ending": "passes_missing",
+     "look": "She is lying on her side on the bed."
+    },
+    {
+     "say": "In scene 3 she's still on her side. On her back please.",
+     "ending": "passes_missing",
+     "look": "She is lying on her side on the bed."
+    },
+    {
+     "say": "Scene 3 again: lying on her back, not her side.",
+     "ending": "passes",
+     "look": "She is lying on her back on the bed."
+    },
+    {
+     "say": "That's it, thank you! Scene 3 looks right now.",
+     "ending": "passes",
+     "look": "She is lying on her back on the bed."
+    }
+   ]
+  },
+  {
+   "id": "hard-05-floss",
+   "kind": "hard_but_possible",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the floss case looks bigger than the toothbrush next to it. It's a small case.",
+     "ending": "passes_missing",
+     "look": "The floss case is drawn about as long as the toothbrush beside it."
+    },
+    {
+     "say": "The floss case in scene 2 is still huge next to the toothbrush. Make it smaller.",
+     "ending": "passes_missing",
+     "look": "The floss case is drawn about as long as the toothbrush beside it."
+    },
+    {
+     "say": "Scene 2 again: the case should be small, much smaller than the toothbrush.",
+     "ending": "passes",
+     "look": "The floss case is small, about a third of the toothbrush's length."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The floss case is small, about a third of the toothbrush's length."
+    }
+   ]
+  },
+  {
+   "id": "hard-06-brush",
+   "kind": "hard_but_possible",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the bristles are white. They should be pink like the brush.",
+     "ending": "passes_missing",
+     "look": "The bristles are white."
+    },
+    {
+     "say": "The bristles in scene 2 are still white. Pink please.",
+     "ending": "passes_missing",
+     "look": "The bristles are white."
+    },
+    {
+     "say": "Scene 2 again: pink bristles, not white.",
+     "ending": "passes",
+     "look": "The bristles are pink, matching the brush."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The bristles are pink, matching the brush."
+    }
+   ]
+  },
+  {
+   "id": "hard-07-speaker",
+   "kind": "hard_but_possible",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: there's a cable sticking out of the speaker. It's wireless.",
+     "ending": "passes_missing",
+     "look": "A black cable runs from the back of the speaker."
+    },
+    {
+     "say": "Scene 2 still shows a cable on the speaker. Remove it.",
+     "ending": "passes_missing",
+     "look": "A black cable runs from the back of the speaker."
+    },
+    {
+     "say": "Scene 2 again: no cable please, it's a wireless speaker.",
+     "ending": "passes",
+     "look": "No cable; the speaker sits alone on the table."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "No cable; the speaker sits alone on the table."
+    }
+   ]
+  },
+  {
+   "id": "hard-08-cream",
+   "kind": "hard_but_possible",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: her hand looks like it has six fingers. Fix the hand.",
+     "ending": "passes_missing",
+     "look": "The hand rubbing the cheek shows six fingers."
+    },
+    {
+     "say": "Scene 2 still has a weird extra finger. Normal hand please.",
+     "ending": "passes_missing",
+     "look": "The hand rubbing the cheek shows six fingers."
+    },
+    {
+     "say": "Scene 2 again: the hand needs five fingers.",
+     "ending": "passes",
+     "look": "The hand rubbing the cheek has five fingers."
+    },
+    {
+     "say": "That's it, thank you! Scene 2 looks right now.",
+     "ending": "passes",
+     "look": "The hand rubbing the cheek has five fingers."
+    }
+   ]
+  },
+  {
+   "id": "across-01-brush",
+   "kind": "across_scenes",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 1: the lighting is too dark.",
+     "ending": "passes",
+     "look": "The room is lit brighter than before."
+    },
+    {
+     "say": "Scene 2 is also way too dark.",
+     "ending": "passes",
+     "look": "The room is lit brighter than before."
+    },
+    {
+     "say": "Same with scene 3, it's too dark.",
+     "ending": "passes",
+     "look": "The room is lit brighter than before."
+    }
+   ]
+  },
+  {
+   "id": "across-02-cream",
+   "kind": "across_scenes",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 1: her skin looks plastic and fake.",
+     "ending": "passes",
+     "look": "Her skin shows natural texture."
+    },
+    {
+     "say": "Scene 2 too, the skin looks like plastic.",
+     "ending": "passes",
+     "look": "Her skin shows natural texture."
+    },
+    {
+     "say": "And scene 3, same plastic skin.",
+     "ending": "passes",
+     "look": "Her skin shows natural texture."
+    }
+   ]
+  },
+  {
+   "id": "across-03-floss",
+   "kind": "across_scenes",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 1: the background is too cluttered.",
+     "ending": "passes",
+     "look": "The background is plain and tidy."
+    },
+    {
+     "say": "Scene 2 has the same messy background.",
+     "ending": "passes",
+     "look": "The background is plain and tidy."
+    },
+    {
+     "say": "Scene 3 also, the background is too busy.",
+     "ending": "passes",
+     "look": "The background is plain and tidy."
+    }
+   ]
+  },
+  {
+   "id": "across-04-bottle",
+   "kind": "across_scenes",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 1: the camera shakes too much.",
+     "ending": "passes",
+     "look": "The camera is steady."
+    },
+    {
+     "say": "The camera shakes in scene 2 as well.",
+     "ending": "passes",
+     "look": "The camera is steady."
+    },
+    {
+     "say": "Scene 3 also shakes, please steady it.",
+     "ending": "passes",
+     "look": "The camera is steady."
+    }
+   ]
+  },
+  {
+   "id": "across-05-roller",
+   "kind": "across_scenes",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 1: the colours look washed out.",
+     "ending": "passes",
+     "look": "The colours are rich and warm."
+    },
+    {
+     "say": "Scene 2 is washed out too.",
+     "ending": "passes",
+     "look": "The colours are rich and warm."
+    },
+    {
+     "say": "Scene 3 as well, the colours are faded.",
+     "ending": "passes",
+     "look": "The colours are rich and warm."
+    }
+   ]
+  },
+  {
+   "id": "across-06-lens",
+   "kind": "across_scenes",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 1: the clip looks blurry.",
+     "ending": "passes",
+     "look": "The clip is sharp and in focus."
+    },
+    {
+     "say": "In scene 2 the clip is blurry too.",
+     "ending": "passes",
+     "look": "The clip is sharp and in focus."
+    },
+    {
+     "say": "Scene 3, also blurry.",
+     "ending": "passes",
+     "look": "The clip is sharp and in focus."
+    }
+   ]
+  },
+  {
+   "id": "across-07-speaker",
+   "kind": "across_scenes",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 1: there's a weird dark shadow across the frame.",
+     "ending": "passes",
+     "look": "No odd shadow; the light is even."
+    },
+    {
+     "say": "Scene 2 has that same strange shadow.",
+     "ending": "passes",
+     "look": "No odd shadow; the light is even."
+    },
+    {
+     "say": "And scene 3, the shadow again.",
+     "ending": "passes",
+     "look": "No odd shadow; the light is even."
+    }
+   ]
+  },
+  {
+   "id": "across-08-vacuum",
+   "kind": "across_scenes",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 1: the kitchen feels cold and grey.",
+     "ending": "passes",
+     "look": "The kitchen looks warm and bright."
+    },
+    {
+     "say": "Scene 2 looks cold and grey too.",
+     "ending": "passes",
+     "look": "The kitchen looks warm and bright."
+    },
+    {
+     "say": "Scene 3 as well, too cold and grey.",
+     "ending": "passes",
+     "look": "The kitchen looks warm and bright."
+    }
+   ]
+  },
+  {
+   "id": "healthy-01-brush",
+   "kind": "healthy",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: can you make the lighting warmer?",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: show the hair a bit longer and wavier.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: use a marble counter in the background instead of tiles.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "healthy-02-cream",
+   "kind": "healthy",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: make it a bit brighter.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: show a little more of her face, not just the cheek.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: put a plant in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "healthy-03-floss",
+   "kind": "healthy",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: make the bathroom look newer.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: show the floss case in the corner of the shot.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: give it a cooler blue light.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "healthy-04-bottle",
+   "kind": "healthy",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: put it outdoors on a rock instead of a table.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: make it golden hour light.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: show a backpack in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "healthy-05-roller",
+   "kind": "healthy",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: make the room softer and pinker.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: show the roller a little closer.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: add a towel in her hair.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "healthy-06-lens",
+   "kind": "healthy",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: use a white phone instead of black.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: put a flower in the background.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: make the desk wooden.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "healthy-07-vacuum",
+   "kind": "healthy",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "Scene 2: use a darker wooden table.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: add a few more crumbs at the start.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 2: make the kitchen brighter.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "solved-01-brush",
+   "kind": "solved_then_different",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "Scene 2: the brush is too far away, show it closer.",
+     "ending": "passes_missing",
+     "look": "The brush is small in a wide shot."
+    },
+    {
+     "say": "Scene 2: still too far, I want it close up.",
+     "ending": "passes",
+     "look": "The brush fills a third of the frame, close up."
+    },
+    {
+     "say": "Great, scene 2 looks good now, thanks!",
+     "ending": "passes",
+     "look": "The brush fills a third of the frame, close up."
+    },
+    {
+     "say": "Now scene 2: can the hair be blonde instead of brown?",
+     "ending": "passes",
+     "look": "The hair is blonde."
+    }
+   ]
+  },
+  {
+   "id": "solved-02-cream",
+   "kind": "solved_then_different",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "Scene 2: the jar should be open on the counter behind her.",
+     "ending": "passes_missing",
+     "look": "No jar is on the counter behind her."
+    },
+    {
+     "say": "Scene 2: I still don't see the open jar behind her.",
+     "ending": "passes",
+     "look": "An open jar sits on the counter behind her."
+    },
+    {
+     "say": "Perfect, scene 2 is right now.",
+     "ending": "passes",
+     "look": "An open jar sits on the counter behind her."
+    },
+    {
+     "say": "Next, scene 2: make the light warmer.",
+     "ending": "passes",
+     "look": "The light is warm."
+    }
+   ]
+  },
+  {
+   "id": "solved-03-floss",
+   "kind": "solved_then_different",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "Scene 2: the mirror is missing, add a mirror behind him.",
+     "ending": "passes_missing",
+     "look": "There is no mirror behind him."
+    },
+    {
+     "say": "Scene 2: still no mirror.",
+     "ending": "passes",
+     "look": "A mirror hangs behind him."
+    },
+    {
+     "say": "Good, scene 2 has the mirror now. Thanks.",
+     "ending": "passes",
+     "look": "A mirror hangs behind him."
+    },
+    {
+     "say": "Scene 2: can he wear a blue t-shirt?",
+     "ending": "passes",
+     "look": "He wears a blue t-shirt."
+    }
+   ]
+  },
+  {
+   "id": "solved-04-bottle",
+   "kind": "solved_then_different",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "Scene 2: the bottle is the wrong green, too light.",
+     "ending": "passes_missing",
+     "look": "The bottle is a light mint green."
+    },
+    {
+     "say": "Scene 2: still too light a green.",
+     "ending": "passes",
+     "look": "The bottle is a deep forest green."
+    },
+    {
+     "say": "Scene 2 is the right green now, thanks.",
+     "ending": "passes",
+     "look": "The bottle is a deep forest green."
+    },
+    {
+     "say": "Scene 2: put a trail map on the table.",
+     "ending": "passes",
+     "look": "A trail map lies on the table."
+    }
+   ]
+  },
+  {
+   "id": "solved-05-roller",
+   "kind": "solved_then_different",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "Scene 2: the roller is upside down, the stone should be on top.",
+     "ending": "passes_missing",
+     "look": "The stone is at the bottom of the frame."
+    },
+    {
+     "say": "Scene 2: still upside down.",
+     "ending": "passes",
+     "look": "The stone is on top, the right way up."
+    },
+    {
+     "say": "Great, scene 2 is the right way up now.",
+     "ending": "passes",
+     "look": "The stone is on top, the right way up."
+    },
+    {
+     "say": "Scene 2: add some morning sunlight.",
+     "ending": "passes",
+     "look": "Morning sun comes through a window."
+    }
+   ]
+  },
+  {
+   "id": "solved-06-lens",
+   "kind": "solved_then_different",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "Scene 2: the phone is too old-looking, use a modern phone.",
+     "ending": "passes_missing",
+     "look": "The phone has thick bezels and a home button."
+    },
+    {
+     "say": "Scene 2: phone still looks old.",
+     "ending": "passes",
+     "look": "The phone is modern with thin bezels."
+    },
+    {
+     "say": "Nice, scene 2 phone looks modern now.",
+     "ending": "passes",
+     "look": "The phone is modern with thin bezels."
+    },
+    {
+     "say": "Scene 2: show a succulent being photographed.",
+     "ending": "passes",
+     "look": "A succulent sits in front of the lens."
+    }
+   ]
+  },
+  {
+   "id": "solved-07-speaker",
+   "kind": "solved_then_different",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "Scene 2: the table should be wooden, not glass.",
+     "ending": "passes_missing",
+     "look": "The table is glass."
+    },
+    {
+     "say": "Scene 2: still a glass table.",
+     "ending": "passes",
+     "look": "The table is wooden."
+    },
+    {
+     "say": "Good, scene 2 has a wooden table now, thanks.",
+     "ending": "passes",
+     "look": "The table is wooden."
+    },
+    {
+     "say": "Scene 2: put a cup of coffee next to the speaker.",
+     "ending": "passes",
+     "look": "A cup of coffee sits next to the speaker."
+    }
+   ]
+  }
+ ]
+}
