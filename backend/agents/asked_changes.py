@@ -23,6 +23,9 @@ from jobs import stale
 from jobs.models import AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 DID_NOT_COUNT = "This run did not count as a try."
+_KEEP_THE_CLIP = (
+    "Keep the scene's clip. Tell the owner what was tried, how it went and what it cost."
+)
 
 
 class BriefBeforeRepeat(Refused):
@@ -49,6 +52,29 @@ def owner_message_for(call: ToolCall) -> Message | None:
     return messages.order_by("seq").last()
 
 
+def _owner_runs(scene: Scene, message: Message) -> QuerySet[SceneAgentRun]:
+    return SceneAgentRun.objects.filter(
+        asked_filing__coverage__scene=scene,
+        asked_filing__owner_message=message,
+    ).select_related("agent_fix__step")
+
+
+def require_producer_start(call: ToolCall, scene: Scene) -> None:
+    """After an owner-asked run, only a filed owner note may start another run for its ask."""
+    message = owner_message_for(call)
+    if message is not None and _owner_runs(scene, message).exists():
+        raise Refused(
+            f"another run after an owner-asked run needs an owner-asked note. {_KEEP_THE_CLIP}"
+        )
+
+
+def _require_owner_try(scene: Scene, message: Message) -> None:
+    if any(counted(run) for run in _owner_runs(scene, message)):
+        raise Refused(
+            f"this owner message already had its one try for this scene. {_KEEP_THE_CLIP}"
+        )
+
+
 def file_note(
     call: ToolCall,
     scene: Scene,
@@ -71,6 +97,7 @@ def file_note(
         raise Refused("there is no owner message for this asked change.")
     changes = AskedChange.objects.filter(session=call.session)
     if asked_change is None:
+        _require_owner_try(scene, message)
         number = (changes.aggregate(last=Max("number"))["last"] or 0) + 1
         change = AskedChange.objects.create(
             session=call.session, number=number, description=description
@@ -90,6 +117,8 @@ def file_note(
             change=change, scene=scene, before_clip=stale.current_clip(scene)
         )
     refusal = _closed_refusal(coverage, message)
+    if asked_change is not None and not refusal:
+        _require_owner_try(scene, message)
     filing, _ = AskedChangeFiling.objects.get_or_create(
         coverage=coverage,
         tool_call=call,
@@ -174,9 +203,11 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
     guidance = ""
     if not counted(run, step):
         status = DID_NOT_COUNT
+        if run.step_failed:
+            status += " The owner's note can be sent again in the same message."
     else:
         number = _try_number(run)
-        status = f"This was try {number}."
+        status = f"This was try {number}, the one try for this scene in that owner message."
         if is_closed(number):
             guidance = " No tries are left on this scene. " + _closing_guidance()
         else:
@@ -205,9 +236,12 @@ def _unfinished_try_line(run: SceneAgentRun) -> str:
 
 def run_failed(step: SceneStep) -> str:
     """Record a technical step failure on the active owner-asked run, and report it."""
+    from agents.scene_agent.lifecycle import keep_owner_clip
+
     run = SceneAgentRun.objects.filter(agent_fix__step=step).order_by("number").last()
     if run is None or run.asked_filing_id is None:
         return ""
+    keep_owner_clip(run.agent_fix, run)
     run.step_failed = True
     run.reason = step.reason
     run.finished_at = run.finished_at or step.finished_at

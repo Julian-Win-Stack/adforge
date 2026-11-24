@@ -39,16 +39,6 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
-        from .scene_recovery import last_fix, same_owner_message
-
-        previous = last_fix(scene)
-        if (
-            previous is not None
-            and previous.gave_up
-            and call.tool != "pass_note"
-            and same_owner_message(call, previous)
-        ):
-            raise Refused("after a give-up, use pass_note for the producer's one extra idea.")
         try:
             h3_clip_seconds(len(scene.line.split()))
         except ValueError as error:
@@ -69,13 +59,24 @@ class StartSceneAgent(Tool):
                 raise Refused(
                     f"scene {scene.number}'s {producer.STEP_NAMES[kind]} is still being made."
                 )
-        producer._start_step(
-            call,
-            scene,
-            SceneStep.Kind.SCENE_AGENT,
-            busy=f"scene {scene.number}'s agent is already working.",
-            note=self.instruction.strip(),
-        )
+        with transaction.atomic():
+            if call.tool != "pass_note":
+                from .scene_recovery import last_fix, same_owner_message
+
+                Job.objects.select_for_update().get(pk=scene.job_id)
+                asked_changes.require_producer_start(call, scene)
+                previous = last_fix(scene)
+                if previous is not None and previous.gave_up and same_owner_message(call, previous):
+                    raise Refused(
+                        "after a give-up, use pass_note for the producer's one extra idea."
+                    )
+            producer._start_step(
+                call,
+                scene,
+                SceneStep.Kind.SCENE_AGENT,
+                busy=f"scene {scene.number}'s agent is already working.",
+                note=self.instruction.strip(),
+            )
         return (
             f"Started scene {scene.number}'s agent in the background; "
             "you will be told how it ended and what it cost."
@@ -95,8 +96,8 @@ class SceneNote(BaseModel):
     owner_asked: bool = Field(
         default=False,
         description="True only when the shop owner asked for this change. Leave it false "
-        "for your own re-plan, as after a give-up or when the owner says to finish with "
-        "what there is.",
+        "for your own re-plan while making the first ad or when the owner says to finish "
+        "with what there is.",
     )
 
 
@@ -165,6 +166,8 @@ class PassNote(Tool):
                             if filing.refusal:
                                 said.append(filing.refusal)
                                 continue
+                        else:
+                            asked_changes.require_producer_start(call, scene)
                         from .scene_recovery import retry_quotes
 
                         quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)

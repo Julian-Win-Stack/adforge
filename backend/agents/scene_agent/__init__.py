@@ -86,14 +86,15 @@ def finish(fixing: AgentFix, reason: str) -> None:
         if run.finished_at is not None:
             return
         lifecycle.give_up(fixing, reason)
-        lifecycle._put_back(fixing.step.scene, run.scene_before)
+        if run.asked_filing_id is None or fixing.kept_id is None:
+            lifecycle._put_back(fixing.step.scene, run.scene_before)
         run.reason = reason
         run.finished_at = timezone.now()
         run.save(update_fields=["reason", "finished_at"])
         tries = work.clip_tries(fixing.step)
         if tries:
             fixing = work._ended(fixing.step)
-        elif fixing.first_clip_id is not None:
+        elif fixing.first_clip_id is not None and fixing.kept_id is None:
             fixing.kept = fixing.first_clip
             fixing.save(update_fields=["kept"])
             assert fixing.kept is not None
@@ -103,15 +104,21 @@ def finish(fixing: AgentFix, reason: str) -> None:
             return
         kept = fixing.kept_id is not None
         number = fixing.step.scene.number
-        kept_words = (
-            "Its last clip stays in the ad. Any try can be picked on its card."
-            if kept
-            else "I'll try a different shot so the ad can finish."
-        )
+        if run.asked_filing_id is not None:
+            reported = f"Scene {number}'s remake ended."
+            if kept:
+                reported += " Its earlier clip stays in the ad."
+        else:
+            kept_words = (
+                "Its last clip stays in the ad. Any try can be picked on its card."
+                if kept
+                else "I'll try a different shot so the ad can finish."
+            )
+            reported = f"Scene {number} couldn't be filmed as planned. {kept_words}"
         notices.post_notice(
             fixing.step.scene.job,
             notices.SCENE_AGENT_GAVE_UP,
-            f"Scene {number} couldn't be filmed as planned. {kept_words}",
+            reported,
             Message.Level.INFO,
             step=messages.StepSignal(
                 number,
@@ -362,17 +369,17 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
     from agents.tasks import _cost
 
     fixing = AgentFix.objects.get(step=step)
+    run = current_run(fixing)
+    if fixing.finished_at is not None and run.created_at > fixing.finished_at:
+        run = fixing.scene_runs.filter(finished_at__isnull=False).order_by("number").last() or run
     end = "parked for the owner's pause" if fixing.paused_at else f"gave up: {fixing.gave_up}"
-    if fixing.gave_up and not fixing.paused_at:
+    if fixing.gave_up and not fixing.paused_at and run.asked_filing_id is None:
         end += (
             " The last clip stays in the ad; the owner can pick any try."
             if fixing.kept_id is not None
             else " Give this scene one different idea through pass_note, owner_asked false; "
             "after its one extra run, finish with the clip or the automatic talking recovery."
         )
-    run = current_run(fixing)
-    if fixing.finished_at is not None and run.created_at > fixing.finished_at:
-        run = fixing.scene_runs.filter(finished_at__isnull=False).order_by("number").last() or run
     if run.reason.startswith(HANDED_BACK):
         end = (
             run.reason + " If the owner asked for words shown on screen, set them as the overlay "
@@ -392,6 +399,8 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
     stale_reason = work.stale_clip_reason(step.scene, clip) if clip is not None else ""
     if stale_reason:
         end = f"kept its clip as a version. {stale_reason}"
+    elif fixing.gave_up and not fixing.paused_at and run.asked_filing_id is not None:
+        end += " The scene keeps the clip it had."
     unchecked = (
         " The clip judge couldn't check this clip, so it is kept unchecked."
         if made is not None and (made.ruling or {}).get("verdict") == "not_checked"
