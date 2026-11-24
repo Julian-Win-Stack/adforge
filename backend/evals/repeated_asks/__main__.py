@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import per_ask
+from . import page, per_ask, replies
 from .cases import CASES_FILE, BadCases, check_counts, load_cases
 from .report import report
 from .runner import run
@@ -35,7 +35,22 @@ def main(argv: list[str] | None = None) -> int:
     reporting.add_argument("--after", type=Path, required=True)
     reporting.add_argument("--json", type=Path, default=None)
     reporting.add_argument("--cases-file", type=Path, default=CASES_FILE)
+    judging = commands.add_parser("judge", help="check owner replies saved in a report")
+    judging.add_argument("--results", type=Path, required=True)
+    judging.add_argument("--yes", action="store_true", help="spend the estimate printed")
+    viewing = commands.add_parser("page", help="build an HTML page from a saved report")
+    viewing.add_argument("--results", type=Path, required=True)
+    viewing.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.command == "judge":
+        try:
+            return replies.judge_file(args.results, yes=args.yes, say=sys.stdout)
+        except Exception as error:
+            print(f"Reply judging stopped: {error}", file=sys.stderr)
+            return 1
+    if args.command == "page":
+        page.render(args.results, args.out)
+        return 0
     try:
         cases = load_cases(args.cases_file)
         check_counts(cases)

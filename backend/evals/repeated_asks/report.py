@@ -158,7 +158,7 @@ def page_data(
                     "repeat": record["repeat"],
                     "error": record["error"],
                     "cost_usd": record["cost_usd"],
-                    "problems": record["problems"],
+                    "problems": record.get("problems"),
                     "counts": counts(record),
                     "asks": record["asks"],
                 }

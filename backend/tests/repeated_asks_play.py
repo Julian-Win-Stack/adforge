@@ -21,12 +21,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.db.models import Sum
 from pytest_django import Settings as SettingsWrapper
 from pytest_httpserver import HTTPServer
 
 from adforge import settings as app_settings
 from adforge.retry import OutsideServiceDown
+from agents import asked_changes
 from agents.loop import STOPPED
 from agents.models import SystemNote, ToolCall
 from agents.scene_agent import PENDING_NOTE_DELIVERED
@@ -367,7 +369,8 @@ def play(
         "shop": case.shop.key,
         "repeat": repeat,
         "asks": asks,
-        "problems": _problems(session),
+        "asked_changes": asked_changes.summary(session),
+        "try_limit": settings.ASKED_CHANGE_TRY_LIMIT,
         "cost_usd": float(_spent(start)),
         "error": error,
     }
@@ -388,6 +391,9 @@ def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, 
     return {
         "number": number,
         "said": said,
+        "message_id": next(
+            (message.pk for message in messages if message.role == Message.Role.USER), None
+        ),
         "chat": [
             {"role": message.role, "text": message.text} for message in messages if message.text
         ],
@@ -422,7 +428,7 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
     quotes = run.quotes or []
     if any(TALKING in quote for quote in quotes):
         origin = "code"
-    elif any(quote.get("owner_asked") for quote in quotes):
+    elif run.asked_filing_id is not None:
         origin = "owner"
     else:
         origin = "producer"
@@ -434,9 +440,6 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         if handed_by is not None
         else run.agent_fix.step.tool_call.tool
     )
-    problem = next(
-        (quote["problem"] for quote in quotes if isinstance(quote.get("problem"), int)), None
-    )
     return {
         "scene": run.agent_fix.step.scene.number,
         "instruction": run.instruction,
@@ -445,7 +448,6 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         "tool": tool,
         "clips": run.clips,
         "ended": _ended(run),
-        "problem": problem,
     }
 
 
@@ -463,16 +465,6 @@ def _ended(run: SceneAgentRun) -> str:
     if current and fixing.passed_id is not None:
         return "made a clip that passed its check"
     return "ended without a passing clip"
-
-
-def _problems(session: Session) -> list[dict[str, Any]] | None:
-    """The stored problem list, when the app under test keeps one."""
-    try:
-        from agents import owner_problems  # type: ignore[attr-defined]
-    except ImportError:
-        return None
-    listed: list[dict[str, Any]] = owner_problems.summary(session)
-    return listed
 
 
 def _spent(start: Before) -> Decimal:

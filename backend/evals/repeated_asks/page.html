@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Repeated asks · AdForge</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #182721;
+        --muted: #50655a;
+        --line: #dce6de;
+        --paper: #fff;
+        --accent: #176849;
+        --wash: #eff5ef;
+        --hero: #183b30;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f7f9f6;
+        color: var(--ink);
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      header {
+        background: var(--hero);
+        color: #f5fff8;
+        padding: 44px 24px 60px;
+      }
+      .shell {
+        max-width: 1150px;
+        margin: auto;
+      }
+      .brand {
+        margin: 0;
+        color: #b7dbca;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+      h1 {
+        font-size: clamp(34px, 6vw, 55px);
+        line-height: 1.08;
+        margin: 0.2em 0 0.25em;
+        letter-spacing: -0.045em;
+      }
+      header p {
+        max-width: 48rem;
+        margin: 0;
+        color: #ddede4;
+      }
+      main {
+        padding: 0 24px 48px;
+      }
+      nav {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 5px;
+        margin: -24px 0 26px;
+        position: relative;
+        box-shadow: 0 6px 18px #1327190e;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+      nav button {
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        padding: 10px 15px;
+        font-weight: 650;
+      }
+      nav button[aria-selected="true"] {
+        background: var(--wash);
+        color: #124f37;
+      }
+      button:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      h2 {
+        margin: 0 0 0.6em;
+        font-size: 25px;
+        letter-spacing: -0.025em;
+      }
+      h3 {
+        margin: 0.1em 0 0.65em;
+        font-size: 18px;
+      }
+      p {
+        margin: 0.35em 0 1em;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+        margin: 0 0 22px;
+      }
+      .card,
+      .panel,
+      details {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .card {
+        padding: 14px 16px;
+      }
+      .card strong {
+        display: block;
+        font-size: 32px;
+        font-weight: 730;
+        line-height: 1.13;
+        color: var(--hero);
+        letter-spacing: -0.05em;
+      }
+      .card span,
+      .muted {
+        color: var(--muted);
+      }
+      .panel {
+        padding: 16px;
+        margin: 0 0 13px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+      }
+      td,
+      th {
+        padding: 9px 11px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+      thead th {
+        background: var(--wash);
+        font-size: 13px;
+        font-weight: 675;
+      }
+      tbody tr:last-child td,
+      tbody tr:last-child th {
+        border: 0;
+      }
+      .meters {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0 18px;
+      }
+      .meter {
+        display: grid;
+        align-items: center;
+        grid-template-columns: 58px minmax(50px, 1fr) 64px;
+        gap: 12px;
+      }
+      .meter-track {
+        background: var(--wash);
+        height: 8px;
+        border-radius: 7px;
+        overflow: hidden;
+      }
+      .meter-fill {
+        height: 100%;
+        background: #2b8b62;
+      }
+      .meter strong {
+        text-align: right;
+      }
+      .sample {
+        border-inline-start: 3px solid #8db29f;
+        padding: 0 12px;
+        margin: 12px 0;
+      }
+      .sample p {
+        white-space: pre-line;
+      }
+      .tag {
+        display: inline-block;
+        border-radius: 4px;
+        background: var(--wash);
+        color: #16553b;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 2px 7px;
+      }
+      .tag[data-answer="no"] {
+        background: #f7ece8;
+        color: #852e2b;
+      }
+      details {
+        padding: 10px 14px;
+        margin: 0 0 8px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 640;
+      }
+      summary .muted {
+        font-weight: 450;
+        font-size: 13px;
+      }
+      .chat {
+        margin: 8px 0 4px;
+        padding-left: 16px;
+      }
+      .chat li {
+        margin-bottom: 4px;
+      }
+      .rows {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .ask {
+        padding: 12px 0;
+        border-top: 1px solid var(--line);
+      }
+      .ask h3 {
+        font-size: 15px;
+        margin: 0;
+      }
+      .ask ul {
+        padding-left: 21px;
+      }
+      .empty {
+        color: var(--muted);
+        margin: 15px 0;
+      }
+      footer {
+        color: var(--muted);
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        margin-top: 22px;
+      }
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .filters select {
+        font: inherit;
+        padding: 5px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        max-width: 100%;
+      }
+      @media (max-width: 570px) {
+        header {
+          padding: 29px 14px 50px;
+        }
+        main {
+          padding: 0 14px 28px;
+        }
+        nav button {
+          padding: 8px 9px;
+        }
+        .panel {
+          padding: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="shell">
+        <p class="brand">AdForge · Scripted chat results</p>
+        <h1>Repeated asks</h1>
+        <p>
+          What happens when shop owners keep asking for the same change to an
+          ad?
+        </p>
+      </div>
+    </header>
+    <main class="shell">
+      <nav aria-label="Results" role="tablist">
+        <button
+          type="button"
+          id="tab-overview"
+          role="tab"
+          aria-controls="overview"
+          aria-selected="true"
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          id="tab-asks"
+          role="tab"
+          aria-controls="asks"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Per ask
+        </button>
+        <button
+          type="button"
+          id="tab-sessions"
+          role="tab"
+          aria-controls="sessions"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Sessions
+        </button>
+        <button
+          type="button"
+          id="tab-closing"
+          role="tab"
+          aria-controls="closing"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Closing replies
+        </button>
+        <button
+          type="button"
+          id="tab-scripts"
+          role="tab"
+          aria-controls="scripts"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Scripts
+        </button>
+      </nav>
+      <section
+        id="overview"
+        role="tabpanel"
+        aria-labelledby="tab-overview"
+        tabindex="0"
+      ></section>
+      <section
+        id="asks"
+        role="tabpanel"
+        aria-labelledby="tab-asks"
+        tabindex="0"
+        hidden
+      ></section>
+      <section
+        id="sessions"
+        role="tabpanel"
+        aria-labelledby="tab-sessions"
+        tabindex="0"
+        hidden
+      ></section>
+      <section
+        id="closing"
+        role="tabpanel"
+        aria-labelledby="tab-closing"
+        tabindex="0"
+        hidden
+      ></section>
+      <section
+        id="scripts"
+        role="tabpanel"
+        aria-labelledby="tab-scripts"
+        tabindex="0"
+        hidden
+      ></section>
+      <footer id="limit"></footer>
+    </main>
+    <script type="application/json" id="results">
+      __RESULTS_JSON__
+    </script>
+    <script>
+      const data = JSON.parse(document.getElementById("results").textContent);
+      const groups = Object.entries(data.groups);
+      const checks = {
+        gave_up_early: "Gave up while tries remained",
+        honest_close: "Explained the failure and offered an alternative",
+        covered_both: "Addressed both changes",
+      };
+      function make(tag, text, className) {
+        const node = document.createElement(tag);
+        if (text != null) node.textContent = text;
+        if (className) node.className = className;
+        return node;
+      }
+      function append(parent, ...nodes) {
+        parent.append(...nodes);
+        return parent;
+      }
+      function panel(id) {
+        return document.getElementById(id);
+      }
+      function table(labels, rows) {
+        const head = append(
+          make("tr"),
+          ...labels.map((label) =>
+            Object.assign(make("th", label), { scope: "col" }),
+          ),
+        );
+        const body = rows.map(([first, ...rest]) =>
+          append(
+            make("tr"),
+            Object.assign(make("th", first), { scope: "row" }),
+            ...rest.map((text) => make("td", text)),
+          ),
+        );
+        return append(
+          make("div", null, "table-wrap"),
+          append(
+            make("table"),
+            append(make("thead"), head),
+            append(make("tbody"), ...body),
+          ),
+        );
+      }
+      function tallies(counts) {
+        if (!counts) return "—";
+        const done = (counts.yes || 0) + (counts.no || 0);
+        return `${counts.yes || 0}/${done} yes${counts.pending ? ` · ${counts.pending} pending` : ""}`;
+      }
+      function meter(row) {
+        const track = make("div", null, "meter-track");
+        track.setAttribute("aria-hidden", "true");
+        const mark = make("div", null, "meter-fill");
+        mark.style.width = `${row.sessions ? (100 * row.tried) / row.sessions : 0}%`;
+        return append(
+          make("div", null, "meter"),
+          make("span", `Ask ${row.number}`),
+          append(track, mark),
+          make("strong", `${row.tried} / ${row.sessions}`),
+        );
+      }
+      const sum = (key) =>
+        groups.reduce(
+          (total, [, group]) => total + (group.scoring[key] || 0),
+          0,
+        );
+      const cards = [
+        ["Sessions read", data.sessions.length],
+        ["Changes closed", sum("closed_changes")],
+        ["Unasked filming starts", sum("self_started")],
+        [
+          "Filing mix-ups",
+          sum("repeat_filed_as_new") + sum("different_filed_as_old"),
+        ],
+      ];
+      const overview = panel("overview");
+      append(
+        overview,
+        make("h2", "Headlines"),
+        append(
+          make("div", null, "grid"),
+          ...cards.map(([label, value]) =>
+            append(
+              make("div", null, "card"),
+              make("strong", value),
+              make("span", label),
+            ),
+          ),
+        ),
+      );
+      if (data.groups.cant_be_done && data.main_baseline) {
+        const group = data.groups.cant_be_done;
+        const baseline = data.main_baseline;
+        const comparison = group.per_ask.slice(0, baseline.tried.length);
+        append(
+          overview,
+          append(
+            make("div", null, "panel"),
+            make("h3", "When a change keeps failing"),
+            make(
+              "p",
+              "Sessions where the app started filming again on each ask.",
+              "muted",
+            ),
+            append(make("div", null, "meters"), ...comparison.map(meter)),
+            make(
+              "p",
+              `Earlier results from ${baseline.sessions} sessions: ${baseline.tried.map((value, index) => `ask ${index + 1}: ${value}`).join(" · ")}`,
+              "muted",
+            ),
+          ),
+        );
+      }
+      append(
+        overview,
+        append(
+          make("div", null, "panel"),
+          make("h3", "How the requests were handled"),
+          table(
+            [
+              "Group",
+              "Closed",
+              "Unasked starts",
+              "Repeat treated as new",
+              "New treated as a repeat",
+              "Tries per change",
+            ],
+            groups.map(([, group]) => [
+              group.title,
+              group.scoring.closed_changes,
+              group.scoring.self_started,
+              group.scoring.repeat_filed_as_new,
+              group.scoring.different_filed_as_old,
+              Object.entries(group.scoring.tries_per_change)
+                .map(([tries, changes]) => `${tries}: ${changes}`)
+                .join(" · ") || "—",
+            ]),
+          ),
+        ),
+      );
+      append(
+        overview,
+        append(
+          make("div", null, "panel"),
+          make("h3", "What the app told the owner"),
+          table(
+            ["Group", ...Object.values(checks)],
+            groups.map(([, group]) => [
+              group.title,
+              ...Object.keys(checks).map((key) =>
+                tallies(group.scoring.replies[key]),
+              ),
+            ]),
+          ),
+        ),
+      );
+      const asks = panel("asks");
+      append(asks, make("h2", "Did the app try again?"));
+      for (const [, group] of groups) {
+        append(
+          asks,
+          append(
+            make("div", null, "panel"),
+            make("h3", group.title),
+            make(
+              "p",
+              `${group.sessions_as_expected} of ${group.sessions} sessions matched every expected ask.`,
+              "muted",
+            ),
+            table(
+              ["Owner ask", "Sessions", "Tried again", "Matched the script"],
+              group.per_ask.map((row) => [
+                row.number,
+                row.sessions,
+                row.tried,
+                row.as_expected,
+              ]),
+            ),
+          ),
+        );
+      }
+      function detail(title, subtitle, node) {
+        return append(
+          make("details"),
+          append(
+            make("summary", title),
+            make("span", ` · ${subtitle}`, "muted"),
+          ),
+          node,
+        );
+      }
+      function replyCard(kind, check) {
+        const badge = make(
+          "span",
+          check.answer ? check.answer.toUpperCase() : "Pending",
+          "tag",
+        );
+        badge.dataset.answer = check.answer || "pending";
+        return append(
+          make("div", null, "sample"),
+          make("h3", checks[kind] || kind),
+          badge,
+          make("p", check.owner),
+          make("p", check.reply || "No reply recorded."),
+        );
+      }
+      const sessions = panel("sessions");
+      append(sessions, make("h2", "What happened in each chat"));
+      if (!data.sessions.length)
+        append(sessions, make("p", "No sessions saved.", "empty"));
+      for (const session of data.sessions) {
+        const body = make("div", null, "rows");
+        if (session.error) append(body, make("p", session.error));
+        for (const ask of session.asks) {
+          const block = append(
+            make("div", null, "ask"),
+            make(
+              "h3",
+              `Ask ${ask.number} · ${ask.tried ? "Filming started" : "No filming"}`,
+            ),
+          );
+          append(
+            block,
+            append(
+              make("ul", null, "chat"),
+              ...(ask.chat || []).map((line) =>
+                make(
+                  "li",
+                  `${line.role === "user" ? "Owner" : line.role === "agent" ? "App" : "Notice"}: ${line.text}`,
+                ),
+              ),
+            ),
+          );
+          for (const run of ask.runs)
+            append(
+              block,
+              make(
+                "p",
+                `Scene ${run.scene ?? "?"} · ${run.instruction || ""} · ${run.ended || ""}`,
+                "muted",
+              ),
+            );
+          for (const [kind, check] of Object.entries(ask.reply_checks))
+            append(block, replyCard(kind, check));
+          append(body, block);
+        }
+        for (const change of session.asked_changes || []) {
+          const record = make("ul");
+          for (const scene of change.scenes)
+            for (const ask of scene.asks)
+              for (const run of ask.runs) {
+                append(
+                  record,
+                  make(
+                    "li",
+                    `Scene ${scene.scene} · ${run.try_number ? `Try ${run.try_number}` : "Run without a counted try"} · ${run.instruction} · ${run.outcome.replaceAll("_", " ")} · $${run.cost_usd.toFixed(2)}`,
+                  ),
+                );
+              }
+          append(body, detail(change.description, "Requested change", record));
+        }
+        append(sessions, detail(session.case, `Run ${session.repeat}`, body));
+      }
+      const closing = panel("closing");
+      append(closing, make("h2", "What the app said when it ran out of tries"));
+      let closingCount = 0;
+      for (const session of data.sessions)
+        for (const ask of session.asks) {
+          if (ask.reply_checks.honest_close) {
+            closingCount++;
+            append(
+              closing,
+              append(
+                make("div", null, "panel"),
+                make("p", `${session.case} · Ask ${ask.number}`, "muted"),
+                replyCard("honest_close", ask.reply_checks.honest_close),
+              ),
+            );
+          }
+        }
+      if (!closingCount)
+        append(closing, make("p", "No closing replies saved.", "empty"));
+      const scripts = panel("scripts");
+      append(scripts, make("h2", "The owner messages we played"));
+      const label = make("label", "Group");
+      label.htmlFor = "script-group";
+      const select = make("select");
+      select.id = "script-group";
+      append(
+        select,
+        new Option("All groups", ""),
+        ...groups.map(([key, group]) => new Option(group.title, key)),
+      );
+      append(scripts, append(make("div", null, "filters"), label, select));
+      for (const script of data.scripts || []) {
+        const list = make("ol");
+        for (const message of script.messages)
+          append(
+            list,
+            append(
+              make("li"),
+              make("p", message.say),
+              make(
+                "p",
+                `Expected: ${message.expected_try ? "Start filming" : "No filming"} · ${message.ending.replaceAll("_", " ")}`,
+                "muted",
+              ),
+            ),
+          );
+        const row = detail(script.id, script.shop, list);
+        row.dataset.group = script.group;
+        append(scripts, row);
+      }
+      select.addEventListener("change", () =>
+        scripts.querySelectorAll("details").forEach((row) => {
+          row.hidden = Boolean(
+            select.value && row.dataset.group !== select.value,
+          );
+        }),
+      );
+      panel("limit").textContent = data.limit;
+      const tabs = [...document.querySelectorAll("[role=tab]")];
+      function show(tab, focus = false) {
+        for (const button of tabs) {
+          const active = button === tab;
+          button.setAttribute("aria-selected", String(active));
+          button.tabIndex = active ? 0 : -1;
+          panel(button.getAttribute("aria-controls")).hidden = !active;
+        }
+        if (focus) tab.focus();
+      }
+      for (const [index, tab] of tabs.entries()) {
+        tab.addEventListener("click", () => show(tab));
+        tab.addEventListener("keydown", (event) => {
+          const next = {
+            ArrowLeft: (index + tabs.length - 1) % tabs.length,
+            ArrowRight: (index + 1) % tabs.length,
+            Home: 0,
+            End: tabs.length - 1,
+          }[event.key];
+          if (next !== undefined) {
+            event.preventDefault();
+            show(tabs[next], true);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

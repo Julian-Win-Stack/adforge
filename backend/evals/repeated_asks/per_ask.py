@@ -7,6 +7,7 @@ from typing import Any, TextIO, TypedDict
 from .cases import ASKED_CHANGE_GROUPS, Case
 from .report import LIMIT, load_run
 from .runner import was_cut_off
+from .scoring import enrich
 
 
 class Baseline(TypedDict):
@@ -54,6 +55,7 @@ def summarize(records: list[dict[str, Any]], cases: dict[str, Case]) -> dict[str
     result: dict[str, Any] = {"groups": groups, "sessions": sessions, "limit": LIMIT}
     if "cant_be_done" in groups:
         result["main_baseline"] = MAIN_BASELINE
+    enrich(result, cases)
     return result
 
 
@@ -100,6 +102,19 @@ def report(
             "sessions as expected on every ask",
             file=say,
         )
+    print("\nHow the changes were handled", file=say)
+    for counts in data["groups"].values():
+        scores = counts["scoring"]
+        print(
+            f"  {counts['title']}: {scores['self_started']} unasked filming starts, "
+            f"{scores['repeat_filed_as_new']} repeats filed as new, "
+            f"{scores['different_filed_as_old']} new changes filed under an old one, "
+            f"{scores['closed_changes']} changes closed. "
+            f"Tries per change: {scores['tries_per_change'] or 'none'}.",
+            file=say,
+        )
+        for label, tally in scores["replies"].items():
+            print(f"    {label.replace('_', ' ')}: {tally}", file=say)
     print(f"\n{data['limit']}", file=say)
     if json_out is not None:
         json_out.parent.mkdir(parents=True, exist_ok=True)

@@ -135,7 +135,7 @@ uv run python -m evals.repeated_asks run --name before --out <folder> [--cases i
 uv run python -m evals.repeated_asks report --before <folder> --after <folder> [--json <file>]
 ```
 
-`run` prints the estimate ($0.20 an owner message) and starts nothing without `--yes`; it stops with a `STOP:` line past 1.5 times the estimate, and a session already saved is not played again. Each session saves `sessions/<case>--<repeat>/record.json`: the chat, every producer tool call and system note per owner message, each remake (scene, instruction, who started it, how it ended), the producer's cost and, when the app keeps one, the problem list. `report` prints each kind's counts before and after side by side (as counts), lists every session whose remakes per ask differ, and writes the JSON a results page is built from. It runs unchanged on `main` and on a branch with the problem list; those counts appear only where the app has one.
+`run` prints the estimate ($0.20 an owner message) and starts nothing without `--yes`; it stops with a `STOP:` line past 1.5 times the estimate, and a session already saved is not played again. Each session saves `sessions/<case>--<repeat>/record.json`: the chat, every producer tool call and system note per owner message, each remake (scene, instruction, who started it, how it ended), the producer's cost and the app's record of requested changes. `report` prints each kind's counts before and after side by side (as counts), lists every session whose remakes per ask differ, and writes the JSON a results page is built from. The legacy report can also read saved runs that use the older problem list.
 
 The 71 sessions from [#743](https://github.com/Julian-Win-Stack/adforge/issues/743) are in
 `repeated_asks/cases_asked_changes.json`. Each owner message says whether the producer is
@@ -155,6 +155,23 @@ asks, and a refusal on the fifth. If the producer posts the "I had to stop for a
 notice, the player stops that attempt and saves its developer reason and cost under
 `attempts/<case>--<repeat>/`. The runner replays that session from the beginning. The
 discarded attempt counts toward spending and is omitted from report totals.
+
+The report also counts unasked filming starts, changes filed under the wrong result, and
+how many tries each requested change used. It keeps which shop owner message each run
+answered, whether it counted as a try, how it ended, and its cost. The JSON report keeps
+the original owner messages, the replies, and any verdicts from the reply checks.
+
+```sh
+uv run python -m evals.repeated_asks judge --results <file>
+uv run python -m evals.repeated_asks page --results <file> --out <results.html>
+```
+
+`judge` prints an estimate first. Run it with `--yes` only when the paid pass is approved.
+It checks replies on Azure and saves each answer and its cost back into the JSON file.
+Running it again resumes with the replies still pending. The questions check whether the
+app gave up early, whether it explained a closed change and offered an alternative, and
+whether the reply addressed both parts of a mixed request. `page` works with pending and
+judged replies and uses the saved data alone.
 
 Known limit: the owner's messages are fixed. A real owner would react to the producer's reply.
 
