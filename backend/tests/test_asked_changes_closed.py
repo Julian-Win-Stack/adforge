@@ -1,5 +1,7 @@
 """Closing an asked change in the shop owner's chat."""
 
+import re
+
 import pytest
 from pytest_django import Settings as SettingsWrapper
 
@@ -25,6 +27,32 @@ REPEATS = [
 
 def refused_ask(said: str) -> OwnerMessage:
     return OwnerMessage(said, "gives_up", FAILED, FAILED)
+
+
+def test_a_successful_early_try_tells_the_producer_that_more_tries_are_available(
+    playing: Playing,  # noqa: F811
+) -> None:
+    first = OwnerMessage("Frame the brush from the side.", "passes", "The side is in frame.")
+    record = playing(
+        tiny("healthy-01-brush", first),
+        [
+            [
+                turn(calls=[filed_note(2, first.say, new_asked_change=first.say)]),
+                turn(says="I'll film the side view."),
+            ],
+            [turn(says="Here is the side view.")],
+        ],
+    )
+
+    assert record["error"] == ""
+    finished = next(
+        event["text"].lower()
+        for event in handoffs("produce")[-1]["conversation"]
+        if event["kind"] == "step_finished"
+        and first.say.rstrip(".").lower() in event["text"].lower()
+    )
+    assert "try 1" in finished
+    assert re.search(r"\btries\b[^.]{0,35}\b(remain|left)\b", finished)
 
 
 def test_the_third_try_closes_the_change_and_the_fourth_ask_is_answered(

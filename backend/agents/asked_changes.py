@@ -126,6 +126,8 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
         status = f"This was try {number}."
         if is_closed(number):
             closing = " No tries are left on this scene. " + _closing_guidance()
+        else:
+            closing = " Tries remain."
     return (
         f" Asked change #{change.number}, {change.description.rstrip('.')}, "
         f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}.{closing}"
