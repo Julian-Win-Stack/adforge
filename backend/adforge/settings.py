@@ -162,6 +162,23 @@ def azure_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
     return "", ""
 
 
+def second_azure_account(environ: Mapping[str, str]) -> tuple[str, str, frozenset[str]]:
+    """The key, address and models of a second Azure account, for models our main Azure
+    account's region doesn't offer (Julian 2026-11-25: gpt-6.2-sol can't be deployed in East
+    US 2). Its models are named comma-separated; each is deployed there under its own name.
+    Empty unless all three are set: then every model stays on the main account."""
+    key = environ.get("AZURE_OPENAI_SECOND_KEY", "")
+    address = environ.get("AZURE_OPENAI_SECOND_BASE_URL", "")
+    models = frozenset(
+        name.strip()
+        for name in environ.get("AZURE_OPENAI_SECOND_MODELS", "").split(",")
+        if name.strip()
+    )
+    if key and address and models:
+        return key, address, models
+    return "", "", frozenset()
+
+
 # Tests point the addresses at a local stand-in.
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
 OPENAI_PICTURES_KEY, OPENAI_PICTURES_BASE_URL = openai_pictures_account(os.environ)
@@ -169,6 +186,7 @@ AZURE_PICTURES_KEY, AZURE_PICTURES_BASE_URL = azure_pictures_account(os.environ)
 # Text uses that same Azure account only when both settings are present. Keep the route
 # explicit: local test servers and optional OpenAI base URLs aren't Azure deployments.
 OPENAI_TEXT_ON_AZURE = bool(AZURE_PICTURES_KEY and AZURE_PICTURES_BASE_URL)
+AZURE_SECOND_KEY, AZURE_SECOND_BASE_URL, AZURE_SECOND_MODELS = second_azure_account(os.environ)
 # The name of the picture model's deployment on Azure. Empty means the deployment has the
 # model's own name, as Azure's copies of the other models do.
 AZURE_PICTURES_DEPLOYMENT = os.environ.get("AZURE_OPENAI_PICTURES_DEPLOYMENT", "")

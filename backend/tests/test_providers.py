@@ -25,9 +25,14 @@ from werkzeug import Request, Response
 from adforge import file_store, retry
 from adforge import settings as app_settings
 from adforge.retry import OutsideServiceDown
-from adforge.settings import azure_pictures_account, openai_account, openai_pictures_account
+from adforge.settings import (
+    azure_pictures_account,
+    openai_account,
+    openai_pictures_account,
+    second_azure_account,
+)
 from chat.models import Session
-from gateway import creatify_adapter, fal_adapter, gateway, gemini_adapter
+from gateway import catalog, creatify_adapter, fal_adapter, gateway, gemini_adapter
 from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
@@ -1208,6 +1213,98 @@ def test_without_an_openai_key_a_picture_fails_saying_so(
 
     assert httpserver.log == []
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def _second_azure_account_answers(
+    httpserver: HTTPServer, settings: Settings, models: str
+) -> OpenAIProvider:
+    """Our main Azure account at /main/, and a second one (in another region) at /second/
+    that answers only `models`."""
+    settings.OPENAI_API_KEY = "main-key"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/main/openai/v1/")
+    settings.OPENAI_TEXT_ON_AZURE = True
+    settings.AZURE_SECOND_KEY, settings.AZURE_SECOND_BASE_URL, settings.AZURE_SECOND_MODELS = (
+        second_azure_account(
+            {
+                "AZURE_OPENAI_SECOND_KEY": "second-key",
+                "AZURE_OPENAI_SECOND_BASE_URL": httpserver.url_for("/second/openai/v1/"),
+                "AZURE_OPENAI_SECOND_MODELS": models,
+            }
+        )
+    )
+    return OpenAIProvider()
+
+
+def _producer_turn(provider: OpenAIProvider) -> str:
+    with use_model(provider):
+        return take_turn(
+            session=Session.objects.create(),
+            purpose="produce",
+            instructions="You are the producer.",
+            conversation=[Said(by="user", text="Hi")],
+            tools=[],
+        ).says
+
+
+def test_a_model_the_second_azure_account_serves_is_asked_of_it(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # A model our main Azure region can't deploy is deployed in another region's account,
+    # with its own key (Julian 2026-11-25: gpt-6.2-sol isn't offered in East US 2).
+    httpserver.expect_oneshot_request(
+        "/second/openai/v1/responses",
+        method="POST",
+        headers={"Authorization": "Bearer second-key"},
+    ).respond_with_json(openai_turn("Hello!"))
+    provider = _second_azure_account_answers(
+        httpserver, settings, f" gpt-5-mini , {catalog.PRODUCER_MODEL} "
+    )
+
+    assert _producer_turn(provider) == "Hello!"
+    assert [request.path for request, _ in httpserver.log] == ["/second/openai/v1/responses"]
+
+
+def test_a_model_the_second_azure_account_does_not_serve_stays_on_the_main_one(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    httpserver.expect_oneshot_request(
+        "/main/openai/v1/responses", method="POST", headers={"Authorization": "Bearer main-key"}
+    ).respond_with_json(openai_turn("Hello!"))
+    provider = _second_azure_account_answers(httpserver, settings, "gpt-5-mini")
+
+    assert _producer_turn(provider) == "Hello!"
+    assert [request.path for request, _ in httpserver.log] == ["/main/openai/v1/responses"]
+
+
+def test_without_the_main_azure_account_the_second_one_is_not_used(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    httpserver.expect_oneshot_request(
+        "/main/openai/v1/responses", method="POST", headers={"Authorization": "Bearer main-key"}
+    ).respond_with_json(openai_turn("Hello!"))
+    provider = _second_azure_account_answers(httpserver, settings, catalog.PRODUCER_MODEL)
+    settings.OPENAI_TEXT_ON_AZURE = False
+    provider = OpenAIProvider()
+
+    assert _producer_turn(provider) == "Hello!"
+    assert [request.path for request, _ in httpserver.log] == ["/main/openai/v1/responses"]
+
+
+def test_without_all_three_second_azure_settings_no_model_moves_to_it() -> None:
+    full = {
+        "AZURE_OPENAI_SECOND_KEY": "second-key",
+        "AZURE_OPENAI_SECOND_BASE_URL": "https://second/openai/v1/",
+        "AZURE_OPENAI_SECOND_MODELS": "gpt-6.2-sol",
+    }
+
+    assert second_azure_account(full) == (
+        "second-key",
+        "https://second/openai/v1/",
+        frozenset({"gpt-6.2-sol"}),
+    )
+    for missing in full:
+        partial = {name: value for name, value in full.items() if name != missing}
+        assert second_azure_account(partial) == ("", "", frozenset())
 
 
 def test_without_both_azure_settings_openai_is_used() -> None:

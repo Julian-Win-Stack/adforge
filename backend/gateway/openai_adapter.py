@@ -91,8 +91,25 @@ class OpenAIProvider:
             else None
         )
 
-    def _text_client(self, on_openai: bool) -> openai.OpenAI:
+        # A second Azure account, in another region, for the models it names: those our
+        # main account's region doesn't offer. Only beside the main Azure account, so its calls
+        # are recorded, and their safety-filter blocks handled, as Azure's.
+        self._second_azure_models = settings.AZURE_SECOND_MODELS
+        self._second_azure_client = (
+            openai.OpenAI(
+                api_key=settings.AZURE_SECOND_KEY,
+                base_url=settings.AZURE_SECOND_BASE_URL,
+                max_retries=0,
+                timeout=catalog.ANSWER_SECONDS,
+            )
+            if settings.AZURE_SECOND_KEY and settings.OPENAI_TEXT_ON_AZURE
+            else None
+        )
+
+    def _text_client(self, on_openai: bool, model: str) -> openai.OpenAI:
         if not on_openai:
+            if self._second_azure_client and model in self._second_azure_models:
+                return self._second_azure_client
             return self._client
         if self._pictures_client is None:
             raise NotSetUp(
@@ -105,7 +122,7 @@ class OpenAIProvider:
     ) -> ModelReply[Out]:
         try:
             raw = (
-                self._text_client(on_openai)
+                self._text_client(on_openai, request.model)
                 .with_options(
                     timeout=catalog.SLOW_ANSWER_SECONDS.get(request.purpose, catalog.ANSWER_SECONDS)
                 )
@@ -164,7 +181,7 @@ class OpenAIProvider:
 
     def take_turn(self, request: TurnRequest, *, on_openai: bool = False) -> TurnReply:
         try:
-            raw = self._text_client(on_openai).responses.with_raw_response.create(
+            raw = self._text_client(on_openai, request.model).responses.with_raw_response.create(
                 model=request.model,
                 instructions=request.instructions,
                 input=_conversation(request),

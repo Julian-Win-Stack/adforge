@@ -109,6 +109,7 @@ Keys, by env var name (what each is for is in `.env.example`):
 
 - `OPENAI_API_KEY`: pictures, and every model call when Azure isn't set.
 - `AZUREE_OPENAI_KEY` and `AZUREE_OPENAI_BASE_URL` (optional): run the text and vision models on Azure.
+- `AZURE_OPENAI_SECOND_KEY`, `AZURE_OPENAI_SECOND_BASE_URL` and `AZURE_OPENAI_SECOND_MODELS` (optional): a second Azure account, in another region, for the models it names (such as `gpt-6.2-sol`, which the main account's region can't deploy).
 - `GEMINI_API_KEY`: watches page videos and videos the user sends. It isn't in `.env.example`; add it yourself.
 - `FIRECRAWL_API_KEY` (page reading), `ELEVENLABS_API_KEY` (transcripts), `FAL_KEY` (music, picture hosting), `CREATIFY_API_ID` and `CREATIFY_API_KEY` (H3 clips).
 - `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (traces), `SENTRY_DSN` (optional, failure alerts).
