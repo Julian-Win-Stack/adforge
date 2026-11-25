@@ -30,7 +30,7 @@ from typing import Any
 from evals.cases import FOLDER, BadCase, half_for, load
 
 QUESTION = "clip_product"
-MODEL = "gpt-6.1-sol"
+MODEL = "gpt-6.2-sol"
 # #708 (Nov 17): only shape, colour and extra pieces; sha256, first 12. The saved ruling's
 # full wording version identifies this check, including talking and scene-reference variants.
 # When the check changes again, keep these versions mapped to this hash for saved exports.

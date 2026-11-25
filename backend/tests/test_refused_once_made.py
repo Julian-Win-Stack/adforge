@@ -66,7 +66,7 @@ def test_a_producer_turn_the_filter_stops_is_taken_again_at_once_and_the_ad_goes
     ]
     turns = ModelCall.objects.filter(purpose="produce").order_by("id")
     assert [(each.attempt, each.outcome) for each in turns] == [(1, "failed"), (2, "succeeded")]
-    # The stopped turn was billed, so it is on the record at its cost: gpt-6.1-sol, 1,200 x
+    # The stopped turn was billed, so it is on the record at its cost: gpt-6.2-sol, 1,200 x
     # $2.00/M in + 300 x $10.00/M out.
     assert [each.cost_usd for each in turns] == [Decimal("0.0054"), Decimal("0.0054")]
     assert "content_filter" in turns[0].error

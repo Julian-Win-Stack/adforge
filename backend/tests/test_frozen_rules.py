@@ -11,7 +11,12 @@ from pathlib import Path
 import pytest
 
 from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
-from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
+from gateway.catalog import (
+    MODEL_FOR_PURPOSE,
+    PRODUCER_MODEL,
+    SCENE_PICTURE_VISION_MODEL,
+    SLOW_ANSWER_SECONDS,
+)
 from jobs import clip_judge, owner_parts, watcher
 from jobs.checks import FACT_CHECK_INSTRUCTIONS
 from jobs.clip_judge import (
@@ -235,7 +240,7 @@ def test_the_start_picture_judge_is_unchanged_from_the_one_tested() -> None:
 
 
 def test_the_start_picture_judge_runs_as_tested() -> None:
-    assert MODEL_FOR_PURPOSE["check_starting_picture"] == "gpt-6.1-sol"
+    assert MODEL_FOR_PURPOSE["check_starting_picture"] == "gpt-6.2-sol"
     assert (ASKS, FAILS_TO_FAIL) == (3, 2)
     # Julian 2026-10-10 21:48: two redraws, then the run stops.
     assert MOST_REDRAWS == 2
@@ -273,7 +278,7 @@ def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> No
     assert clip_judge.PRODUCT_CHECK == pinned.read_text()
     proved_head = MOTION_CHECK[: MOTION_CHECK.index("You may also be shown")]
     assert clip_judge.MOTION_FROM_REFERENCES == proved_head + CLIP_MOTION_NEW_PARAGRAPH
-    assert MODEL_FOR_PURPOSE["check_clip_product"] == "gpt-6.1-sol"
+    assert MODEL_FOR_PURPOSE["check_clip_product"] == "gpt-6.2-sol"
 
 
 def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
@@ -298,7 +303,7 @@ def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
 def test_the_clip_judge_runs_as_proved() -> None:
     # Decider call 10: the proof's wrong fails pick the model, sol for every check.
     for check in ("references", "product", "motion"):
-        assert MODEL_FOR_PURPOSE[f"check_clip_{check}"] == "gpt-6.1-sol"
+        assert MODEL_FOR_PURPOSE[f"check_clip_{check}"] == "gpt-6.2-sol"
         # Each ask may take as long as the harness waited.
         assert SLOW_ANSWER_SECONDS[f"check_clip_{check}"] == 600
     # PRODUCT at 10 frames a second (SIDES' phone-flip rate, Julian's yes 2026-10-14 18:30; it
@@ -492,26 +497,53 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
     assert named == []
 
 
-# Julian, Oct 29 2026 19:12: every gpt-5.6-sol job moves to gpt-6.1-sol, with no comparison
-# test.
-MOVED_TO_6_1_SOL = (
+# Julian, Nov 25 2026: every gpt-6.1-sol job moves to gpt-6.2-sol, with no comparison test
+# (Oct 29 2026 19:12 every gpt-5.6-sol job had moved to gpt-6.1-sol the same way).
+MOVED_TO_6_2_SOL = (
     "produce",
     "look",
+    "eval_judge_P1",
+    "eval_judge_P4",
+    "eval_judge_A11",
+    "eval_judge_C5",
+    "eval_judge_C6",
+    "eval_judge_C7",
+    "eval_judge_C8",
+    "eval_judge_C9",
+    "eval_judge_C10",
+    "eval_judge_C13",
+    "eval_judge_C14",
+    "eval_judge_N1",
     "pick_photos",
     "note_face",
     "label_photo",
+    "pick_side_photos",
     "plan_ad",
+    "check_scene_cohesion",
     "rewrite_line",
     "shorten_script",
     "shorten_line",
     "lengthen_line",
+    "check_cut_out",
+    "pick_cut_out_helpers",
+    "check_made_picture",
+    "check_part_picture",
     "plan_before_picture",
+    "check_face_swap",
+    "check_starting_picture",
+    "fix_scene",
+    "scene_agent",
+    "scene_picture_check",
+    "check_clip_motion",
+    "check_clip_pass_through",
+    "check_clip_product",
+    "check_clip_references",
 )
 
 
-@pytest.mark.parametrize("purpose", MOVED_TO_6_1_SOL)
-def test_each_job_that_was_on_gpt_5_6_sol_runs_on_gpt_6_1_sol(purpose: str) -> None:
-    assert MODEL_FOR_PURPOSE[purpose] == "gpt-6.1-sol"
+@pytest.mark.parametrize("purpose", MOVED_TO_6_2_SOL)
+def test_each_job_that_was_on_gpt_6_1_sol_runs_on_gpt_6_2_sol(purpose: str) -> None:
+    assert MODEL_FOR_PURPOSE[purpose] == "gpt-6.2-sol"
 
 
 def test_no_job_runs_on_gpt_5_6_sol() -> None:
@@ -872,3 +904,8 @@ def test_the_clip_product_export_identifies_every_current_wording_variant() -> N
         for talking in (False, True)
         for gender in ("woman", "man")
     }
+
+
+def test_no_job_runs_on_gpt_6_1_sol() -> None:
+    assert "gpt-6.1-sol" not in MODEL_FOR_PURPOSE.values()
+    assert "gpt-6.1-sol" not in (PRODUCER_MODEL, SCENE_PICTURE_VISION_MODEL)
