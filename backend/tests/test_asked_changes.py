@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pytest_django import Settings as SettingsWrapper
 from pytest_httpserver import HTTPServer
 
 from agents import asked_changes
@@ -136,7 +137,7 @@ def test_a_technical_step_failure_without_a_clip_does_not_use_a_try(
     assert len(record["asks"][0]["runs"]) == 1
     assert "try 1" in record["asks"][1]["tool_calls"][0]["result"]
     assert any(
-        "background step failed" in handoff and "did not count as a try" in handoff
+        "background step failed" in handoff and asked_changes.DID_NOT_COUNT.lower() in handoff
         for handoff in (str(handoff).lower() for handoff in handoffs("produce"))
     )
     scene = asked_changes.summary(Session.objects.get())[0]["scenes"][0]
@@ -179,7 +180,7 @@ def test_a_note_replaced_before_filming_does_not_use_a_try(
     say(again.say)
     steps.run_held()
 
-    assert "did not count as a try" in results_of("pass_note")[-1]
+    assert asked_changes.DID_NOT_COUNT in results_of("pass_note")[-1]
     scene = asked_changes.summary(Session.objects.get())[0]["scenes"][0]
     assert scene["tries"] == 1
     assert [ask["tried"] for ask in scene["asks"]] == [False, True]
@@ -219,6 +220,51 @@ def test_a_reordered_scene_keeps_its_tries_and_a_scene_number_does_not(
     assert "try 1" in record["asks"][3]["tool_calls"][0]["result"]
     scenes = asked_changes.summary(Session.objects.get())[0]["scenes"]
     assert [(scene["scene"], scene["tries"]) for scene in scenes] == [(1, 2), (2, 1)]
+
+
+def test_a_superseded_render_that_finishes_late_does_not_take_the_last_try(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    settings: SettingsWrapper,
+) -> None:
+    settings.ASKED_CHANGE_TRY_LIMIT = 1
+    first = OwnerMessage("Show the brush closer.", "passes", "It is closer.")
+    again = OwnerMessage("Move much closer than that.", "passes", "It fills the frame.")
+    case = tiny("healthy-01-brush", first, again)
+    fake_the_rest(fake_model, Script(case, now=-1))
+    make_the_ad(fake_model, say, steps, serve_shop(httpserver, case.shop), case.shop)
+    existing_films = len(results_of("film"))
+
+    def replace_the_note_while_the_camera_is_working() -> dict[str, str]:
+        fake_model.respond(
+            "produce",
+            turn(calls=[filed_note(2, again.say, asked_change=1)]),
+            turn(says="Moving closer."),
+        )
+        say(again.say)
+        return {"state": "working"}
+
+    fake_model.respond("collect_clip", replace_the_note_while_the_camera_is_working)
+    fake_model.respond(
+        "produce",
+        turn(calls=[filed_note(2, first.say, new_asked_change=first.say)]),
+        turn(says="On it."),
+    )
+    say(first.say)
+    fake_model.answer_unscripted("produce", lambda _: turn(says="The scene is ready."))
+    steps.run_held()
+
+    assert len(results_of("film")) == existing_films + 2
+    scene = asked_changes.summary(Session.objects.get())[0]["scenes"][0]
+    replaced, kept = scene["asks"]
+    assert scene["tries"] == 1
+    assert (replaced["runs"][0]["outcome"], replaced["runs"][0]["try_number"]) == (
+        "superseded",
+        None,
+    )
+    assert kept["runs"][0]["try_number"] == 1
 
 
 def test_a_note_answers_the_message_the_producer_had_read_before_its_turn(

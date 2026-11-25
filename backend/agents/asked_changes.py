@@ -1,5 +1,6 @@
 """File owner asks, count their scene runs, and read back what happened."""
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal, TypedDict
 
@@ -12,6 +13,8 @@ from chat.models import Message, Session
 from gateway.models import ModelCall
 from jobs import stale
 from jobs.models import AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
+
+DID_NOT_COUNT = "This run did not count as a try."
 
 
 def owner_message_for(call: ToolCall) -> Message | None:
@@ -105,7 +108,7 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
     filing = run.asked_filing
     change = filing.coverage.change
     if not counted(run, step):
-        status = "This run did not count as a try."
+        status = DID_NOT_COUNT
     else:
         number = _try_number(run)
         status = f"This was try {number}."
@@ -131,27 +134,27 @@ def _clip_rows(run: SceneAgentRun) -> QuerySet[AgentFixTry]:
     return run.agent_fix.tries.filter(sent__scene_run=run.pk)
 
 
-def made_clip(run: SceneAgentRun) -> bool:
+def made_clip(run: SceneAgentRun, *, by: datetime | None = None) -> bool:
     # Film reserves its allowance before the provider answers. A saved clip can also
     # predate the judge or transcript that makes the try's result final.
-    return (
-        _clip_rows(run)
-        .filter(Q(clip__isnull=False) | Q(step__produced__kind=ProducedItem.Kind.CLIP))
-        .exists()
-    )
+    clip = Q(clip__isnull=False)
+    produced = Q(step__produced__kind=ProducedItem.Kind.CLIP)
+    if by is not None:
+        clip &= Q(clip__created_at__lte=by)
+        produced &= Q(step__produced__created_at__lte=by)
+    return _clip_rows(run).filter(clip | produced).exists()
 
 
 def counted(run: SceneAgentRun, step: SceneStep | None = None) -> bool:
     """Whether this run uses a try, including an active run still in progress."""
     if run.reason == SceneAgentRun.PENDING_DELIVERED:
         return False
+    if run.reason == SceneAgentRun.SUPERSEDED:
+        # A render that arrives after the replacement remains a version, but was
+        # still unfinished when the new ask was admitted.
+        return made_clip(run, by=run.finished_at)
     step = step or run.agent_fix.step
-    no_clip = (
-        run.reason == SceneAgentRun.SUPERSEDED
-        or run.step_failed
-        or step.status == SceneStep.Status.CANCELLED
-    )
-    return not no_clip or made_clip(run)
+    return (not run.step_failed and step.status != SceneStep.Status.CANCELLED) or made_clip(run)
 
 
 def tries_for(coverage: AskedChangeScene) -> list[SceneAgentRun]:
