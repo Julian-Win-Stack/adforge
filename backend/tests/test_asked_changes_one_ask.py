@@ -1,6 +1,9 @@
 """One owner's message can start one try on each scene."""
 
+from collections.abc import Callable
+
 import pytest
+from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents import asked_changes
@@ -9,11 +12,13 @@ from evals.repeated_asks.cases import OwnerMessage
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
 
-from .conftest import handoffs
+from .conftest import HeldSteps, handoffs, results_of
+from .repeated_asks_play import Script, fake_the_rest, make_the_ad, serve_shop
 from .test_asked_changes import filed_note
 from .test_card_versions import cards
 from .test_producer_auto_fix import failing
 from .test_repeated_asks_eval import Playing, note, playing, tiny  # noqa: F401 (fixture)
+from .test_scene_agent_changes import change
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM
 
@@ -148,3 +153,62 @@ def test_a_technical_failure_leaves_the_same_owner_message_its_try(
         ("failed", None),
         ("passed", 1),
     ]
+
+
+def test_a_failed_replacement_restores_the_line_and_clip_from_before_the_remake(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    first = OwnerMessage("Film a closer view.", "gives_up", "Still too wide.", "Too wide.")
+    again = OwnerMessage("Use a slow side view.", "gives_up", "Still too wide.", "Too wide.")
+    case = tiny("healthy-01-brush", first, again)
+    fake_the_rest(fake_model, Script(case, now=-1))
+    make_the_ad(fake_model, say, steps, serve_shop(httpserver, case.shop), case.shop)
+    (earlier,) = [clip for clip in cards(api, session_id)[2] if clip["in_ad"]]
+
+    def replace_the_unfinished_note() -> Turn:
+        result = results_of("change_scene")[-1]
+        assert "line" in result and "shows" in result
+        fake_model.respond(
+            "produce",
+            turn(calls=[filed_note(2, again.say, new_asked_change=again.say)]),
+            turn(says="I'll use the side view."),
+        )
+        say(again.say)
+        return turn(says="I was preparing the closer view.")
+
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                change(
+                    line="The brush turns on its side slowly while its shape stays in view.",
+                    shows="The brush turns slowly on its side in the presenter's hands.",
+                )
+            ]
+        ),
+        replace_the_unfinished_note,
+        turn(calls=[("give_up", {"reason": again.reason})]),
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[filed_note(2, first.say, new_asked_change=first.say)]),
+        turn(says="On it."),
+    )
+    say(first.say)
+    fake_model.answer_unscripted("produce", lambda _: turn(says="I'll keep the earlier shot."))
+    steps.run_held()
+
+    changes = asked_changes.summary(Session.objects.get())
+    assert [asked["description"] for asked in changes] == [first.say, again.say]
+    assert changes[-1]["scenes"][0]["asks"][0]["runs"][0]["outcome"] == "gave_up"
+    (kept,) = [clip for clip in cards(api, session_id)[2] if clip["in_ad"]]
+    assert (kept["url"], kept["line"], kept["shows"]) == (
+        earlier["url"],
+        earlier["line"],
+        earlier["shows"],
+    )

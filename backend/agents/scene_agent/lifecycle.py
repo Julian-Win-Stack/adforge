@@ -276,7 +276,10 @@ def keep_owner_clip(fixing: AgentFix, run: SceneAgentRun) -> bool:
     if run.asked_filing_id is None or fixing.first_clip is None:
         return False
     if fixing.kept is None or fixing.kept.file != fixing.first_clip.file:
-        _restore_row(fixing.step.scene, run.scene_before)
+        # The clip is from before the entire step, even if another note arrived
+        # while one of its runs was changing the scene.
+        first_run = fixing.scene_runs.earliest("number")
+        _restore_row(fixing.step.scene, first_run.scene_before)
         fixing.kept = work.back_to_the_clip_before(fixing.step)
         fixing.save(update_fields=["kept"])
     return fixing.kept_id is not None
