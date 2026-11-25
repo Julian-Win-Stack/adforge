@@ -11,7 +11,12 @@ from pathlib import Path
 import pytest
 
 from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
-from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
+from gateway.catalog import (
+    MODEL_FOR_PURPOSE,
+    PRODUCER_MODEL,
+    SCENE_PICTURE_VISION_MODEL,
+    SLOW_ANSWER_SECONDS,
+)
 from jobs import clip_judge, owner_parts, watcher
 from jobs.checks import FACT_CHECK_INSTRUCTIONS
 from jobs.clip_judge import (
@@ -899,3 +904,8 @@ def test_the_clip_product_export_identifies_every_current_wording_variant() -> N
         for talking in (False, True)
         for gender in ("woman", "man")
     }
+
+
+def test_no_job_runs_on_gpt_6_1_sol() -> None:
+    assert "gpt-6.1-sol" not in MODEL_FOR_PURPOSE.values()
+    assert "gpt-6.1-sol" not in (PRODUCER_MODEL, SCENE_PICTURE_VISION_MODEL)
