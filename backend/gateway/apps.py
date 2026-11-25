@@ -41,7 +41,12 @@ class GatewayConfig(AppConfig):
                 "on OpenAI's own API); text and vision calls go to %s",
                 others,
             )
-        if settings.AZURE_SECOND_KEY:
+        if settings.AZURE_SECOND_KEY and not settings.OPENAI_TEXT_ON_AZURE:
+            logger.warning(
+                "The second Azure account is set but the main one isn't (AZUREE_OPENAI_KEY, "
+                "AZUREE_OPENAI_BASE_URL), so it isn't used"
+            )
+        elif settings.AZURE_SECOND_KEY:
             logger.warning(
                 "Calls to %s go to %s, the second Azure account",
                 ", ".join(sorted(settings.AZURE_SECOND_MODELS)),

@@ -1222,6 +1222,7 @@ def _second_azure_account_answers(
     that answers only `models`."""
     settings.OPENAI_API_KEY = "main-key"
     settings.OPENAI_BASE_URL = httpserver.url_for("/main/openai/v1/")
+    settings.OPENAI_TEXT_ON_AZURE = True
     settings.AZURE_SECOND_KEY, settings.AZURE_SECOND_BASE_URL, settings.AZURE_SECOND_MODELS = (
         second_azure_account(
             {
@@ -1270,6 +1271,20 @@ def test_a_model_the_second_azure_account_does_not_serve_stays_on_the_main_one(
         "/main/openai/v1/responses", method="POST", headers={"Authorization": "Bearer main-key"}
     ).respond_with_json(openai_turn("Hello!"))
     provider = _second_azure_account_answers(httpserver, settings, "gpt-5-mini")
+
+    assert _producer_turn(provider) == "Hello!"
+    assert [request.path for request, _ in httpserver.log] == ["/main/openai/v1/responses"]
+
+
+def test_without_the_main_azure_account_the_second_one_is_not_used(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    httpserver.expect_oneshot_request(
+        "/main/openai/v1/responses", method="POST", headers={"Authorization": "Bearer main-key"}
+    ).respond_with_json(openai_turn("Hello!"))
+    provider = _second_azure_account_answers(httpserver, settings, catalog.PRODUCER_MODEL)
+    settings.OPENAI_TEXT_ON_AZURE = False
+    provider = OpenAIProvider()
 
     assert _producer_turn(provider) == "Hello!"
     assert [request.path for request, _ in httpserver.log] == ["/main/openai/v1/responses"]

@@ -92,7 +92,8 @@ class OpenAIProvider:
         )
 
         # A second Azure account, in another region, for the models it names: those our
-        # main account's region doesn't offer.
+        # main account's region doesn't offer. Only beside the main Azure account, so its calls
+        # are recorded, and their safety-filter blocks handled, as Azure's.
         self._second_azure_models = settings.AZURE_SECOND_MODELS
         self._second_azure_client = (
             openai.OpenAI(
@@ -101,7 +102,7 @@ class OpenAIProvider:
                 max_retries=0,
                 timeout=catalog.ANSWER_SECONDS,
             )
-            if settings.AZURE_SECOND_KEY
+            if settings.AZURE_SECOND_KEY and settings.OPENAI_TEXT_ON_AZURE
             else None
         )
 

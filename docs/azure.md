@@ -24,6 +24,7 @@ cd /srv/adforge && deploy/deploy.sh <branch-or-commit>
 - It refuses while ads are being made. Check nothing is running before `FORCE=1`: a restart kills running steps.
 - With no argument it builds what is checked out, local changes included (how a local-only test patch goes on).
 - A deploy that changes keys in `deploy/.env` only takes effect after `deploy.sh` restarts the containers.
+- Models the main Azure account's region can't deploy (`gpt-6.2-sol` in East US 2) run on a second Azure account in another region: set `AZURE_OPENAI_SECOND_KEY`, `AZURE_OPENAI_SECOND_BASE_URL` and `AZURE_OPENAI_SECOND_MODELS` in `deploy/.env`, then run `deploy.sh`. The startup log names the models that go there.
 
 ## Running ads on Azure
 
