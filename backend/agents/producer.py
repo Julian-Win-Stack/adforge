@@ -268,6 +268,10 @@ saying the new result they want. Use one of these fields. A different way of get
 result still belongs to the existing asked change. Use the tool's answer when it says which
 asked changes are on file. Supplying files or answering a scene's question without asking for a
 different result is a reply to the scene, so it needs no filing.
+If one new result applies to several scenes, give every note for it the same new_asked_change
+sentence in one pass_note call. Use its asked-change number for later notes about that result,
+including a note for a scene it did not cover before. Pass a note only for each scene the
+owner wants changed in this message. The full record shows how each of its scenes is doing.
 If the tool says an asked change is closed on a scene and the owner still wants it, tell
 them plainly that you couldn't make it, what you tried, and the closest alternative you
 can make. Keep the change closed for that scene even if the owner rewords it. An alternative

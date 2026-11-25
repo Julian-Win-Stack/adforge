@@ -84,7 +84,7 @@ def file_note(
     instruction: str,
 ) -> AskedChangeFiling:
     """File an owner-asked note while its scene and job are locked."""
-    description = new_asked_change.strip() if new_asked_change is not None else ""
+    description = " ".join(new_asked_change.split()) if new_asked_change is not None else ""
     if (asked_change is None) == (new_asked_change is None) or (
         new_asked_change is not None and not description
     ):
@@ -98,10 +98,17 @@ def file_note(
     changes = AskedChange.objects.filter(session=call.session)
     if asked_change is None:
         _require_owner_try(scene, message)
-        number = (changes.aggregate(last=Max("number"))["last"] or 0) + 1
-        change = AskedChange.objects.create(
-            session=call.session, number=number, description=description
+        change = (
+            changes.filter(description=description, coverage__filings__tool_call=call)
+            # A filing under an existing change in this call cannot make it new.
+            .exclude(coverage__filings__tool_call_id__lt=call.pk)
+            .first()
         )
+        if change is None:
+            number = (changes.aggregate(last=Max("number"))["last"] or 0) + 1
+            change = AskedChange.objects.create(
+                session=call.session, number=number, description=description
+            )
     else:
         selected = changes.filter(number=asked_change).first()
         if selected is None:
@@ -194,6 +201,16 @@ def filed_line(filing: AskedChangeFiling | None, run: SceneAgentRun | None = Non
     return f" Asked change #{change.number}, {change.description.rstrip('.')}, try {number}."
 
 
+def linked_filing_lines(call: ToolCall) -> list[str]:
+    """One whole record per linked change filmed by a completed batch of notes."""
+    changes = AskedChange.objects.filter(
+        coverage__filings__tool_call=call,
+        coverage__filings__refusal="",
+        coverage__filings__runs__isnull=False,
+    ).distinct()
+    return [record for change in changes if (record := linked_record(change))]
+
+
 def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
     """The producer's extra line when an owner-asked run ends."""
     if run is None or run.asked_filing is None:
@@ -212,10 +229,12 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
             guidance = " No tries are left on this scene. " + _closing_guidance()
         else:
             guidance = _unfinished_try_line(run) or " Tries remain."
-    return (
+    result = (
         f" Asked change #{change.number}, {change.description.rstrip('.')}, "
         f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}.{guidance}"
     )
+    linked = linked_record(change)
+    return f"{result}\n{linked}" if linked else result
 
 
 def _unfinished_try_line(run: SceneAgentRun) -> str:
@@ -425,6 +444,38 @@ def _run_record(run: SceneAgentRun, number: int | None) -> RunRecord:
         cost_usd=float(run_cost(run)),
         passed_clip=passed_clip,
     )
+
+
+_ENDED = {
+    "running": "is still running",
+    "passed": "passed",
+    "gave_up": "gave up",
+    "failed": "failed",
+    "superseded": "was superseded",
+    "cancelled": "was cancelled",
+}
+
+
+def linked_record(change: AskedChange) -> str:
+    """The producer's record of every scene covered by a multi-scene change."""
+    covered = list(change.coverage.select_related("scene").order_by("scene__number", "scene_id"))
+    if len(covered) < 2:
+        return ""
+    lines = [f"Asked change #{change.number} covers these scenes."]
+    limit = try_limit()
+    for coverage in covered:
+        runs = tries_for(coverage)
+        state = "closed" if is_closed(len(runs)) else "open"
+        removed = " (removed from the ad)" if coverage.scene.removed_at is not None else ""
+        ending = "no tries yet"
+        if runs:
+            outcome, _ = _outcome(runs[-1])
+            ending = f"latest try {_ENDED[outcome]}"
+        lines.append(
+            f"Scene {coverage.scene.number}{removed} used {len(runs)} of {limit} tries, "
+            f"{state}, {ending}."
+        )
+    return "\n".join(lines)
 
 
 def _scene_record(coverage: AskedChangeScene) -> SceneRecord:

@@ -207,6 +207,7 @@ class PassNote(Tool):
                     if isinstance(error, asked_changes.BriefBeforeRepeat):
                         asked_changes.record_repeat_brief(error, answer)
                     said.append(answer)
+            said.extend(asked_changes.linked_filing_lines(call))
         return "\n".join(said)
 
 
