@@ -175,7 +175,7 @@ def test_a_billed_judge_failure_is_saved_and_can_be_retried(
 
     monkeypatch.setattr(gateway, "ask_measured", fail)
     monkeypatch.setattr(monitoring, "failed", record_notice)
-    checks = {
+    checks: dict[str, dict[str, Any]] = {
         "honest_close": {
             "owner": "Please try again",
             "reply": "Here is a choice",
