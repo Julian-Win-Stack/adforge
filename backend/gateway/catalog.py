@@ -7,22 +7,22 @@ from django.conf import settings
 
 # The producer's model: the producer's turns, and its look (spec #247 point 2, Julian 03:15:
 # the look is the producer's own model).
-PRODUCER_MODEL = "gpt-6.1-sol"
-SCENE_PICTURE_VISION_MODEL = "gpt-6.1-sol"
+PRODUCER_MODEL = "gpt-6.2-sol"
+SCENE_PICTURE_VISION_MODEL = "gpt-6.2-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
-    "eval_judge_P1": "gpt-6.1-sol",
-    "eval_judge_P4": "gpt-6.1-sol",
-    "eval_judge_A11": "gpt-6.1-sol",
-    "eval_judge_C5": "gpt-6.1-sol",
-    "eval_judge_C6": "gpt-6.1-sol",
-    "eval_judge_C7": "gpt-6.1-sol",
-    "eval_judge_C8": "gpt-6.1-sol",
-    "eval_judge_C9": "gpt-6.1-sol",
-    "eval_judge_C10": "gpt-6.1-sol",
-    "eval_judge_C13": "gpt-6.1-sol",
-    "eval_judge_C14": "gpt-6.1-sol",
-    "eval_judge_N1": "gpt-6.1-sol",
+    "eval_judge_P1": "gpt-6.2-sol",
+    "eval_judge_P4": "gpt-6.2-sol",
+    "eval_judge_A11": "gpt-6.2-sol",
+    "eval_judge_C5": "gpt-6.2-sol",
+    "eval_judge_C6": "gpt-6.2-sol",
+    "eval_judge_C7": "gpt-6.2-sol",
+    "eval_judge_C8": "gpt-6.2-sol",
+    "eval_judge_C9": "gpt-6.2-sol",
+    "eval_judge_C10": "gpt-6.2-sol",
+    "eval_judge_C13": "gpt-6.2-sol",
+    "eval_judge_C14": "gpt-6.2-sol",
+    "eval_judge_N1": "gpt-6.2-sol",
     "check_scene_picture": SCENE_PICTURE_VISION_MODEL,
     "describe_product_logo": SCENE_PICTURE_VISION_MODEL,
     "produce": PRODUCER_MODEL,
@@ -37,16 +37,16 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "copy_page_text": "gpt-6-luna",
     # The picker reads a marked screenshot of the page: 92% of its photos were the right
     # product's (docs/scraping-test/ref-photo-test/results.md).
-    "pick_photos": "gpt-6.1-sol",
+    "pick_photos": "gpt-6.2-sol",
     # A photo the picker never saw gets its Face note from the same model, as the picker
     # gives it for the photos it picks.
-    "note_face": "gpt-6.1-sol",
+    "note_face": "gpt-6.2-sol",
     # A photo the picker never saw gets the picker's fixed fields from the same model, as the
     # picker gives them for the photos it picks (spec #210 point 1).
-    "label_photo": "gpt-6.1-sol",
+    "label_photo": "gpt-6.2-sol",
     # The side picker (#524) sees the same photos as the labelling call, so the same model.
-    "pick_side_photos": "gpt-6.1-sol",
-    "plan_ad": "gpt-6.1-sol",
+    "pick_side_photos": "gpt-6.2-sol",
+    "plan_ad": "gpt-6.2-sol",
     # The watcher: watches a page video whole, sound and all (spec #210 point 3), as Gemini
     # Flash did in the watcher test (runs/watcher-test/results.md, Oct 27 2026).
     "watch_video": "gemini-3.8-flash",
@@ -56,11 +56,11 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "fact_check": "gpt-5.6-terra",
     # Whether a scene agent's new action still matches the ad's other scenes (Julian, Nov 8
     # 2026): text only, on the planner's model.
-    "check_scene_cohesion": "gpt-6.1-sol",
-    "rewrite_line": "gpt-6.1-sol",
-    "shorten_script": "gpt-6.1-sol",
-    "shorten_line": "gpt-6.1-sol",
-    "lengthen_line": "gpt-6.1-sol",
+    "check_scene_cohesion": "gpt-6.2-sol",
+    "rewrite_line": "gpt-6.2-sol",
+    "shorten_script": "gpt-6.2-sol",
+    "shorten_line": "gpt-6.2-sol",
+    "lengthen_line": "gpt-6.2-sol",
     "draw_person": "gpt-image-2.5-sunburst",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
@@ -74,21 +74,21 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "make_product_only": "gpt-image-2.5-sunburst",
     # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
     # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
-    "check_cut_out": "gpt-6.1-sol",
+    "check_cut_out": "gpt-6.2-sol",
     # Before a product-only version is cut out (#273 point 6): which part of the product the
     # photo hides, and which library pictures show it.
-    "pick_cut_out_helpers": "gpt-6.1-sol",
+    "pick_cut_out_helpers": "gpt-6.2-sol",
     # A picture the producer makes from its own prompt and library items (spec #247 point 5),
     # drawn as cut-outs are, and its check, asked once as the cut-out check is.
     "make_picture": "gpt-image-2.5-sunburst",
-    "check_made_picture": "gpt-6.1-sol",
+    "check_made_picture": "gpt-6.2-sol",
     # An owner part's own picture (spec #210 point 20): drawn from its sentence beside a
     # product photo, or changed from the shop owner's photo of it, as cut-outs are drawn; and
     # its check against the sentence, on the picture judges' model.
     "make_part_picture": "gpt-image-2.5-sunburst",
-    "check_part_picture": "gpt-6.1-sol",
+    "check_part_picture": "gpt-6.2-sol",
     # The ad's before-picture: planned from every B-roll scene, then drawn.
-    "plan_before_picture": "gpt-6.1-sol",
+    "plan_before_picture": "gpt-6.2-sol",
     "make_before_picture": "gpt-image-2.5-sunburst",
     # The presenter in the ad's room, drawn in one go from the portrait and words (spec #401),
     # then the room alone, taken out of it once per ad (from the before-picture when the ad
@@ -101,7 +101,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # A library photo's stranger's face redrawn as the presenter's (#275), on the picture model
     # that paints, and its face-only check, on the picture judges' model.
     "swap_face": "gpt-image-2.5-sunburst",
-    "check_face_swap": "gpt-6.1-sol",
+    "check_face_swap": "gpt-6.2-sol",
     "make_person_in_room": "gpt-image-2.5-sunburst",
     # The fixing agent's place_edit (#237), for one scene: a small edit of its room or
     # person-in-room picture, or a new place drawn fresh: a room alone from words, or the
@@ -113,23 +113,23 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # Judges the starting picture beside its shop photo. With the photo, sol caught 7 of Julian's
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
     # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).
-    "check_starting_picture": "gpt-6.1-sol",
+    "check_starting_picture": "gpt-6.2-sol",
     # The fixing agent (agents/fixing_agent.py): owns one failed B-roll scene, films it again
     # and reads the judge's answer, until a try passes or it gives up. The picture judges'
     # model, as it is proven at seeing what our pictures show.
-    "fix_scene": "gpt-6.1-sol",
-    "scene_agent": "gpt-6.1-sol",
-    "scene_picture_check": "gpt-6.1-sol",
+    "fix_scene": "gpt-6.2-sol",
+    "scene_agent": "gpt-6.2-sol",
+    "scene_picture_check": "gpt-6.2-sol",
     "draw_scene_picture": "gpt-image-2.5-sunburst",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).
-    "check_clip_motion": "gpt-6.1-sol",
-    "check_clip_pass_through": "gpt-6.1-sol",
+    "check_clip_motion": "gpt-6.2-sol",
+    "check_clip_pass_through": "gpt-6.2-sol",
     # Judged against its sent list (#228): PRODUCT replaced SIDES, on the model the judge build
     # brief tested it on, and the first question asks whether the references show enough.
-    "check_clip_product": "gpt-6.1-sol",
-    "check_clip_references": "gpt-6.1-sol",
+    "check_clip_product": "gpt-6.2-sol",
+    "check_clip_references": "gpt-6.2-sol",
     "transcribe_line": "scribe_v2",
     # H3 renders are submitted, then collected; only submission is paid.
     "make_broll_clip": "creatify/boreal-h3",
@@ -185,10 +185,10 @@ class ContextWindow:
 
 
 # The context window of each model an agent takes turns on, beside its prices: from the
-# model's page (gpt-6.1-sol: developers.openai.com/api/docs/models/gpt-6.1-sol, 2026-10-29).
+# model's page (gpt-6.2-sol: developers.openai.com/api/docs/models/gpt-6.2-sol, 2026-11-25).
 # The producer's conversation folds past a share of it (settings.FOLD_PAST_SHARE_OF_WINDOW).
 CONTEXT_WINDOW: dict[str, ContextWindow] = {
-    "gpt-6.1-sol": ContextWindow(context=1_050_000, max_input=922_000),
+    "gpt-6.2-sol": ContextWindow(context=1_050_000, max_input=922_000),
 }
 
 
@@ -207,6 +207,7 @@ def max_input_tokens(model: str) -> int:
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
+    "gpt-6.2-sol": (Decimal("2.00"), Decimal("10.00")),
     "gpt-6.1-sol": (Decimal("2.00"), Decimal("10.00")),
     "gpt-5.6-sol": (Decimal("4.00"), Decimal("20.00")),
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),

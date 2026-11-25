@@ -208,7 +208,7 @@ def test_old_rulings_and_retired_move_records_still_load_and_export(
         session=job.session,
         purpose="check_move",
         provider="azure",
-        model="gpt-6.1-sol",
+        model="gpt-6.2-sol",
         attempt=1,
         handoff={"video_prompt": "The old planned move."},
         output={"blocked": False, "says": "Clear.", "moving_parts": "A handle."},

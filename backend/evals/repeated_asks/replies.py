@@ -12,7 +12,7 @@ from gateway.types import Handoff, ModelRequest
 from .scoring import refresh_groups
 
 PURPOSE = "check_repeated_ask_reply"
-MODEL = "gpt-6.1-sol"
+MODEL = "gpt-6.2-sol"
 QUESTIONS = {
     "gave_up_early": (
         "Does the reply say the listed change cannot be done or that the assistant is giving up "

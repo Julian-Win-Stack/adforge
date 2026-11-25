@@ -173,7 +173,7 @@ frames of one scene are joined side by side (`jobs.clip_judge.joined`) until eve
 fits, never skipped: a 35-second pair shows 3-4 frames per picture.
 
 **Cost per case** (an estimate from the eval judge's clip asks, not yet a real N1 call;
-the command prints the real cost): one change-check ask is about 40-50k input tokens on gpt-6.1-sol, about $0.10 (the eval judge's 43-50-picture
+the command prints the real cost): one change-check ask is about 40-50k input tokens on gpt-6.2-sol, about $0.10 (the eval judge's 43-50-picture
 clip asks cost $0.07-0.08). So about $0.10 when `made`, about $0.30 when `not_made`
 (asked 3 times), plus about $0.50-0.85 per remade clip for the eight clip questions.
 

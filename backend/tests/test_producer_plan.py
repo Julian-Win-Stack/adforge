@@ -560,7 +560,7 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
 
     result = plan_ad_result()
     assert result.startswith(
-        "Failed: a model's answer couldn't be used (gpt-6.1-sol gave an answer for plan_ad "
+        "Failed: a model's answer couldn't be used (gpt-6.2-sol gave an answer for plan_ad "
         "that could not be read:"
     )
     assert broken_rule in result

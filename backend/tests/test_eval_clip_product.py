@@ -66,7 +66,7 @@ def test_a_judge_pass_in_a_watched_ad_is_a_pass_by_his_rule() -> None:
         "verdict": "pass",
         "reason": "",
         "judge": PREVIOUS_JUDGE,
-        "model": "gpt-6.1-sol",
+        "model": "gpt-6.2-sol",
         "at": "2026-11-04T00:00:00Z",
     }
 
