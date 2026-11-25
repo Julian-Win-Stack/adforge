@@ -32,15 +32,39 @@ def note_for(
 
 
 def _ways_out(text: str) -> None:
-    assert re.search(r"different shot.*\bscene \d+\b", text, re.I)
-    assert re.search(r"different approach.*\bscenes\b", text, re.I)
+    assert re.search(r"\bshot\b[^\n]*\bscene\s+\d+\b", text, re.I)
+    assert re.search(r"\bapproach\b[^\n]*\bscenes\b", text, re.I)
     assert "use_version" in text
     assert re.search(r"\b(wait|choose)\b", text, re.I)
 
 
-def _covered(text: str, detail: str) -> list[str]:
-    rows = re.findall(r"^scene (\d+)\b(.*\bused \d+ of \d+ tries\b.*)", text, re.I | re.M)
-    return [number for number, status in rows if re.search(rf"\b{detail}\b", status, re.I)]
+def _covered(text: str, tries: int) -> list[str]:
+    rows = re.findall(
+        r"^scene (\d+)\b[^\n]*?\b(\d+)[^\d\n]+(\d+)\b[^\n]*\b(open|closed)\b", text, re.I | re.M
+    )
+    return [scene for scene, used, _limit, _state in rows if int(used) == tries]
+
+
+def test_refused_linked_notes_report_each_covered_scene_once(playing: Playing) -> None:  # noqa: F811
+    first = OwnerMessage("Use warmer light in all three scenes.", "passes", "The lights are warm.")
+    record = playing(
+        tiny("healthy-01-brush", first),
+        [
+            [
+                turn(calls=[note_for(SCENES, first, new_asked_change=CHANGE)]),
+                turn(calls=[note_for((1, 2), first, asked_change=1)]),
+                turn(says="The scenes are being filmed."),
+            ],
+            [turn(says="The warmer clips are ready.")],
+        ],
+    )
+
+    assert record["error"] == ""
+    ask = record["asks"][0]
+    assert [run["scene"] for run in ask["runs"]] == list(SCENES)
+    refused = ask["tool_calls"][1]["result"]
+    assert "refused" in refused.lower()
+    assert _covered(refused, 1) == ["1", "2", "3"]
 
 
 def test_all_three_scenes_can_fail_independently_and_stay_closed(
@@ -91,19 +115,21 @@ def test_all_three_scenes_can_fail_independently_and_stay_closed(
         (),
     ]
     history = record["asks"][1]["tool_calls"][0]["result"]
-    assert _covered(history, r"1 of \d+ tries") == ["1", "2", "3"] * 3
+    assert _covered(history, 1) == ["1", "2", "3"]
     assert "use_version" not in history
 
     finished = next(
         event["text"]
         for event in handoffs("produce")[-1]["conversation"]
-        if event["kind"] == "step_finished" and "this was try 3" in event["text"].lower()
+        if event["kind"] == "step_finished" and re.search(r"\btry\s+3\b", event["text"], re.I)
     )
-    assert _covered(finished, r"3 of \d+ tries") == ["1", "2", "3"]
+    assert _covered(finished, 3) == ["1", "2", "3"]
     _ways_out(finished)
     refused = record["asks"][-1]["tool_calls"][0]["result"]
-    assert _covered(refused, r"3 of \d+ tries") == ["1", "2", "3"] * 3
-    assert len(re.findall(r"\bis closed on this scene\b", refused)) == 3
+    assert _covered(refused, 3) == ["1", "2", "3"]
+    assert all(
+        scene["closed"] for scene in asked_changes.summary(Session.objects.get())[0]["scenes"]
+    )
     _ways_out(refused)
 
 
@@ -180,7 +206,7 @@ def test_the_application_only_carries_out_the_owners_chosen_option(
         films,
     ]
     history = record["asks"][1]["tool_calls"][0]["result"]
-    assert _covered(history, r"1 of \d+ tries") == ["1", "2", "3"]
+    assert _covered(history, 1) == ["1", "2", "3"]
 
     before_the_pick = next(
         request
@@ -190,13 +216,13 @@ def test_the_application_only_carries_out_the_owners_chosen_option(
     finished = next(
         event["text"]
         for event in before_the_pick["conversation"]
-        if event["kind"] == "step_finished" and "this was try 3" in event["text"].lower()
+        if event["kind"] == "step_finished" and re.search(r"\btry\s+3\b", event["text"], re.I)
     )
     refused = record["asks"][3]["tool_calls"][0]["result"]
     for report in (finished, refused):
         _ways_out(report)
-        assert _covered(report, "passed") == ["1", "3"]
-        assert _covered(report, "closed") == ["2"]
+        assert _covered(report, 1) == ["1", "3"]
+        assert _covered(report, 3) == ["2"]
         assert re.findall(r"use_version\(scene=(\d+), version=(\d+)\)", report) == [
             ("1", "1"),
             ("3", "1"),
