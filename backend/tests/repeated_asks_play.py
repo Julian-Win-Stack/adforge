@@ -4,7 +4,7 @@ collects it (no test_ prefix). `python -m evals.repeated_asks run` runs it with 
 gives every parallel worker its own database; the eval's tests call `play` with the producer
 scripted.
 
-Each session: a made-up shop's page is served on this machine, and a finished three-scene ad
+Each session: a made-up shop's page is served on this machine, and a finished ad
 is made for it with every model faked. Then the owner's scripted messages are sent one by one,
 each once the producer's turn and every scene step it started have finished. From there only
 the producer's own turns may be real (REPEATED_ASKS_REAL=1): its scene agents film or give up
@@ -40,7 +40,7 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import running_tool
 from gateway.models import ModelCall
 from gateway.types import ClipFailed, ToolUse, Turn, TurnReply, TurnRequest
-from jobs import notices
+from jobs import notices, stale
 from jobs.models import Job, ProducedItem, SceneAgentRun, SceneStep
 
 from .conftest import NO_CHOICES, READABLE, HeldSteps, a_plan_with, broll, facts_ok, picture
@@ -99,6 +99,7 @@ class Before:
     run: int
     model_call: int
     warnings: int
+    produced: int
 
 
 @dataclass
@@ -128,8 +129,8 @@ def serve_shop(httpserver: HTTPServer, shop: Shop) -> str:
     return httpserver.url_for(f"/products/{shop.key}")
 
 
-def shop_plan(shop: Shop) -> dict[str, Any]:
-    """The planner's answer for the shop: talking, B-roll, talking."""
+def shop_plan(shop: Shop, *, scene_count: int = 3) -> dict[str, Any]:
+    """The planner's answer for the shop: talking, B-roll, and a closing talking shot."""
     scenes = [
         {
             "line": shop.lines[0],
@@ -155,6 +156,18 @@ def shop_plan(shop: Shop) -> dict[str, Any]:
             "shows_to_lens": False,
         },
     ]
+    if scene_count == 4:
+        scenes.insert(
+            2,
+            {
+                "line": "Here is another angle so you can see the product clearly in daylight.",
+                "kind": "talking",
+                "shows": f"The presenter holds the {shop.product} up to the light.",
+                "talking_style": "propped",
+                "product_state": "out of the box",
+                "shows_to_lens": True,
+            },
+        )
     return a_plan_with(
         scenes=scenes,
         product_name=shop.product,
@@ -240,10 +253,16 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
 
 
 def make_the_ad(
-    fake_model: FakeModel, say: Callable[..., None], steps: HeldSteps, link: str, shop: Shop
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    link: str,
+    shop: Shop,
+    *,
+    scene_count: int = 3,
 ) -> None:
     """The finished ad the owner's messages are about, every model faked."""
-    fake_model.respond("plan_ad", shop_plan(shop))
+    fake_model.respond("plan_ad", shop_plan(shop, scene_count=scene_count))
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
@@ -257,7 +276,7 @@ def make_the_ad(
                     "start_scene_agent",
                     {"scene": number, "instruction": "Film the planned scene.", "quotes": [link]},
                 )
-                for number in (1, 2, 3)
+                for number in range(1, scene_count + 1)
             ]
         ),
         turn(says="The planned scenes are being made."),
@@ -308,6 +327,7 @@ def _before(session: Session) -> Before:
         run=_last(SceneAgentRun),
         model_call=_last(ModelCall),
         warnings=len(warnings),
+        produced=_last(ProducedItem),
     )
 
 
@@ -339,7 +359,7 @@ def play(
     script = Script(case, now=-1)
     fake_the_rest(fake_model, script)
     link = serve_shop(httpserver, case.shop)
-    make_the_ad(fake_model, say, steps, link, case.shop)
+    make_the_ad(fake_model, say, steps, link, case.shop, scene_count=case.initial_scenes)
     after_the_ad()
     session = Session.objects.get()
     start = _before(session)
@@ -372,9 +392,11 @@ def play(
 
 def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, Any]:
     messages = list(session.messages.filter(seq__gt=before.seq).order_by("seq"))
-    calls = ToolCall.objects.filter(
-        session=session, agent="producer", pk__gt=before.tool_call
-    ).order_by("pk")
+    calls = list(
+        ToolCall.objects.filter(
+            session=session, agent="producer", pk__gt=before.tool_call
+        ).order_by("pk")
+    )
     notes = SystemNote.objects.filter(session=session, pk__gt=before.note).order_by("pk")
     runs = (
         SceneAgentRun.objects.filter(pk__gt=before.run)
@@ -397,6 +419,7 @@ def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, 
         ],
         "system_notes": [{"kind": note.kind, "text": note.text} for note in notes],
         "runs": [_run(run) for run in runs],
+        "restored": _restored(session, before, calls),
         "cut_offs": (
             _cut_off_reasons(session, before)
             if any(
@@ -406,6 +429,38 @@ def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, 
             else []
         ),
     }
+
+
+def _restored(session: Session, before: Before, calls: list[ToolCall]) -> list[dict[str, int]]:
+    used_versions = [call.arguments for call in calls if call.tool == "use_version"]
+    if not used_versions:
+        return []
+    brought_back = (
+        ProducedItem.objects.filter(
+            job__session=session,
+            pk__gt=before.produced,
+            kind=ProducedItem.Kind.CLIP,
+            back_to__isnull=False,
+        )
+        .select_related("scene")
+        .order_by("scene__number", "pk")
+    )
+    restored = []
+    for clip in brought_back:
+        scene, version = clip.scene, clip.back_to
+        if (
+            scene is not None
+            and version is not None
+            and any(
+                args.get("scene") == scene.number and args.get("version") == version
+                for args in used_versions
+            )
+        ):
+            # The final ad must actually use the restored clip.
+            current = stale.current_clip(scene)
+            if current is not None and current.pk == clip.pk:
+                restored.append({"scene": scene.number, "version": version})
+    return restored
 
 
 def _cut_off_reasons(session: Session, before: Before) -> list[str]:
@@ -434,6 +489,7 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         if handed_by is not None
         else run.agent_fix.step.tool_call.tool
     )
+    ending, passed = _ended(run)
     return {
         "scene": run.agent_fix.step.scene.number,
         "instruction": run.instruction,
@@ -441,24 +497,26 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         "retry": any(RETRY in quote for quote in quotes),
         "tool": tool,
         "clips": run.clips,
-        "ended": _ended(run),
+        "filmed": asked_changes.made_clip(run),
+        "passed": passed,
+        "ended": ending,
     }
 
 
-def _ended(run: SceneAgentRun) -> str:
+def _ended(run: SceneAgentRun) -> tuple[str, bool]:
     fixing = run.agent_fix
     step = fixing.step
     last = fixing.scene_runs.order_by("-pk").first()
     current = last is not None and last.pk == run.pk
     if run.reason:
-        return run.reason
-    if current and step.status == SceneStep.Status.FAILED and step.reason:
-        return step.reason
+        return run.reason, False
+    if current and step.status == SceneStep.Status.FAILED:
+        return step.reason or "the step failed", False
     if current and fixing.gave_up:
-        return f"gave up: {fixing.gave_up}"
+        return f"gave up: {fixing.gave_up}", False
     if current and fixing.passed_id is not None:
-        return "made a clip that passed its check"
-    return "ended without a passing clip"
+        return "made a clip that passed its check", True
+    return "ended without a passing clip", False
 
 
 def _spent(start: Before) -> Decimal:

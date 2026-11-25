@@ -11,6 +11,7 @@ from typing import Any, Literal, cast
 
 CASES_FILE = Path(__file__).parent / "cases.json"
 ASKED_CHANGES_CASES_FILE = CASES_FILE.with_name("cases_asked_changes.json")
+LINKED_CASES_FILE = CASES_FILE.with_name("cases_linked.json")
 
 type Kind = Literal[
     "impossible_check_fails",
@@ -27,8 +28,14 @@ type Kind = Literal[
     "closed_and_new",
     "breaks",
     "much_later",
+    "one_scene_fails",
+    "picks_way_out",
+    "all_scenes_fail",
+    "scene_joins_later",
+    "works_everywhere",
 ]
 type Ending = Literal["passes", "passes_missing", "gives_up", "breaks"]
+type WayOut = Literal["shot", "approach", "restore"]
 
 # Each kind: how many sessions it has, how many owner messages each sends, and what a good
 # result looks like (said in the report; the counts are read by a person).
@@ -83,6 +90,23 @@ ASKED_CHANGE_KINDS = {
     "healthy": (7, 3, "normal"),
     "solved_then_different": (7, 4, "normal"),
 }
+
+LINKED_GROUPS = {
+    "one_scene_fails": "One scene keeps failing",
+    "picks_way_out": "The owner picks a way out",
+    "all_scenes_fail": "All three scenes keep failing",
+    "scene_joins_later": "A new scene joins later",
+    "works_everywhere": "The change works everywhere",
+}
+GROUPS = ASKED_CHANGE_GROUPS | LINKED_GROUPS
+LINKED_KINDS = {
+    "one_scene_fails": (8, 5, "one_scene_fails"),
+    "picks_way_out": (6, 5, "picks_way_out"),
+    "all_scenes_fail": (4, 5, "all_scenes_fail"),
+    "scene_joins_later": (4, 3, "scene_joins_later"),
+    "works_everywhere": (4, 4, "works_everywhere"),
+}
+SUITES = {None: KINDS, "asked_changes": ASKED_CHANGE_KINDS, "linked": LINKED_KINDS}
 
 ENDINGS = ("passes", "passes_missing", "gives_up")
 SHOP_FIELDS = (
@@ -146,10 +170,15 @@ class Case:
     shop: Shop
     messages: tuple[OwnerMessage, ...]
     group: str | None = None
+    way_out: WayOut | None = None
 
     @property
     def good(self) -> str:
-        return ASKED_CHANGE_GROUPS[self.group] if self.group is not None else KINDS[self.kind][2]
+        return GROUPS[self.group] if self.group is not None else KINDS[self.kind][2]
+
+    @property
+    def initial_scenes(self) -> int:
+        return 4 if self.kind == "scene_joins_later" else 3
 
 
 def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
@@ -160,9 +189,9 @@ def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
         raise BadCases(f"{path}: not readable JSON ({error})") from error
     shops = {key: _shop(key, value) for key, value in _dict(data, "shops", "file").items()}
     suite = data.get("suite")
-    if suite not in (None, "asked_changes"):
+    if suite not in (None, "asked_changes", "linked"):
         raise BadCases(f"{path}: unknown suite {suite!r}")
-    kinds = ASKED_CHANGE_KINDS if suite == "asked_changes" else KINDS
+    kinds = SUITES[suite]
     cases: dict[str, Case] = {}
     for number, raw in enumerate(_list(data, "cases", "file"), start=1):
         where = f"case {raw.get('id') or f'number {number}'}" if isinstance(raw, dict) else ""
@@ -175,11 +204,21 @@ def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
 
 def check_counts(cases: dict[str, Case]) -> None:
     """The file holds each kind's number of sessions."""
-    kinds = ASKED_CHANGE_KINDS if any(case.group is not None for case in cases.values()) else KINDS
+    groups = {case.group for case in cases.values()}
+    kinds = (
+        LINKED_KINDS
+        if groups.intersection(LINKED_GROUPS)
+        else (ASKED_CHANGE_KINDS if groups - {None} else KINDS)
+    )
     for kind, (wanted, _, _) in kinds.items():
         found = sum(1 for case in cases.values() if case.kind == kind)
         if found != wanted:
             raise BadCases(f"kind {kind} has {found} sessions, not {wanted}")
+    if kinds is LINKED_KINDS:
+        for choice in ("shot", "approach", "restore"):
+            found = sum(case.way_out == choice for case in cases.values())
+            if found != 2:
+                raise BadCases(f"way out {choice} has {found} sessions, expected 2")
 
 
 def _shop(key: str, raw: Any) -> Shop:
@@ -218,6 +257,10 @@ def _case(
     if not isinstance(raw, dict):
         raise BadCases(f"{where}: not an object")
     fields = {"id", "kind", "shop", "messages"}
+    if raw.get("kind") == "picks_way_out":
+        fields.add("way_out")
+        if raw.get("way_out") not in ("shot", "approach", "restore"):
+            raise BadCases(f"{where}: way_out must be shot, approach or restore")
     if set(raw) != fields:
         raise BadCases(f"{where}: fields must be {sorted(fields)}, got {sorted(raw)}")
     if not _text(raw["id"]):
@@ -237,14 +280,22 @@ def _case(
         kind=cast(Kind, kind),
         shop=shop,
         messages=tuple(
-            _message(each, f"{where}, message {n}", scored=scored)
+            _message(
+                each,
+                f"{where}, message {n}",
+                scored=scored,
+                linked_scenes=(4 if kind == "scene_joins_later" else 3)
+                if kind in LINKED_KINDS
+                else 0,
+            )
             for n, each in enumerate(messages, 1)
         ),
         group=label if scored else None,
+        way_out=raw.get("way_out"),
     )
 
 
-def _message(raw: Any, where: str, *, scored: bool) -> OwnerMessage:
+def _message(raw: Any, where: str, *, scored: bool, linked_scenes: int) -> OwnerMessage:
     if not isinstance(raw, dict):
         raise BadCases(f"{where}: not an object")
     allowed = {"say", "ending", "look", "reason"}
@@ -252,6 +303,8 @@ def _message(raw: Any, where: str, *, scored: bool) -> OwnerMessage:
         allowed.add("expected_try")
         if not isinstance(raw.get("expected_try"), bool):
             raise BadCases(f"{where}: expected_try must be true or false")
+    if linked_scenes:
+        allowed.add("by_scene")
     if not set(raw) <= allowed or not {"say", "ending", "look"} <= set(raw):
         raise BadCases(f"{where}: needs say, ending and look (reason with gives_up)")
     if not _text(raw["say"]) or not _text(raw["look"]):
@@ -259,8 +312,17 @@ def _message(raw: Any, where: str, *, scored: bool) -> OwnerMessage:
     endings = (*ENDINGS, "breaks") if scored else ENDINGS
     if raw["ending"] not in endings:
         raise BadCases(f"{where}: ending must be one of {endings}")
+    scene_endings = raw.get("by_scene", {})
+    if not isinstance(scene_endings, dict) or any(
+        scene not in {str(number) for number in range(1, linked_scenes + 1)}
+        or ending not in endings
+        for scene, ending in scene_endings.items()
+    ):
+        raise BadCases(f"{where}: by_scene must map scene numbers to one of {endings}")
     reason = raw.get("reason", "")
-    if (raw["ending"] in ("gives_up", "breaks")) != _text(reason):
+    if any(
+        ending in ("gives_up", "breaks") for ending in (raw["ending"], *scene_endings.values())
+    ) != _text(reason):
         raise BadCases(f"{where}: a reason is given exactly when the scene gives up or breaks")
     return OwnerMessage(
         say=raw["say"],
@@ -268,6 +330,7 @@ def _message(raw: Any, where: str, *, scored: bool) -> OwnerMessage:
         look=raw["look"],
         reason=reason,
         expected_try=raw.get("expected_try"),
+        by_scene={int(scene): ending for scene, ending in scene_endings.items()},
     )
 
 

@@ -26,6 +26,12 @@ QUESTIONS = {
         "Does the reply address both parts of the owner message, separately explaining what "
         "happened to the change that could not be delivered and what happened to the new one?"
     ),
+    "linked_ways_out": (
+        "Does the reply identify which linked scenes have the change and which still need it, "
+        "consistent with the listed scene states, and offer all three choices: a different shot "
+        "just for the affected scene, a different approach for all linked scenes, or putting "
+        "the changed scenes back without filming?"
+    ),
 }
 
 
