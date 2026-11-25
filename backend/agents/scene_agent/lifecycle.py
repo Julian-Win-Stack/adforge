@@ -229,7 +229,9 @@ def _finish(fixing: AgentFix) -> None:
         return
     with transaction.atomic():
         if fixing.passed_id is None:
-            _put_back(fixing.step.scene, fixing.scene_before)
+            run = fixing.scene_runs.order_by("number").last() if fixing.is_scene_agent else None
+            if run is None or not keep_owner_clip(fixing, run):
+                _put_back(fixing.step.scene, fixing.scene_before)
         fixing.finished_at = timezone.now()
         fixing.save(update_fields=["finished_at"])
 
@@ -257,12 +259,30 @@ def _parked_by_the_pause(fixing: AgentFix) -> bool:
     return True
 
 
-def _put_back(scene: Scene, row: dict[str, Any]) -> None:
+def _restore_row(scene: Scene, row: dict[str, Any]) -> None:
     restored = {"owner_words": [], **row} if "line" in row else row
     Scene.objects.filter(pk=scene.pk).update(**restored)
     scene.refresh_from_db()
+
+
+def _put_back(scene: Scene, row: dict[str, Any]) -> None:
+    _restore_row(scene, row)
     if scene.status == Scene.Status.FINISHED:
         work.finish_with_clip(scene, work._newest_clip(scene))
+
+
+def keep_owner_clip(fixing: AgentFix, run: SceneAgentRun) -> bool:
+    """On an unsuccessful owner-asked run, bring back its earlier clip without filming."""
+    if run.asked_filing_id is None or fixing.first_clip is None:
+        return False
+    if fixing.kept is None or fixing.kept.file != fixing.first_clip.file:
+        # The clip is from before the entire step, even if another note arrived
+        # while one of its runs was changing the scene.
+        first_run = fixing.scene_runs.earliest("number")
+        _restore_row(fixing.step.scene, first_run.scene_before)
+        fixing.kept = work.back_to_the_clip_before(fixing.step)
+        fixing.save(update_fields=["kept"])
+    return fixing.kept_id is not None
 
 
 def _same_words(one: str, other: str) -> bool:

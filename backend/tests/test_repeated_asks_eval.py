@@ -75,7 +75,7 @@ type Playing = Callable[[Case, list[list[Any]]], dict[str, Any]]
 GIVES_UP = "The video model can't do it."
 
 
-def test_impossible_check_fails_counts_the_owner_note_and_the_producers_extra_idea(
+def test_impossible_check_fails_counts_the_owner_note_and_blocks_the_producers_extra_idea(
     playing: Playing,
 ) -> None:
     first = OwnerMessage(
@@ -86,16 +86,15 @@ def test_impossible_check_fails_counts_the_owner_note_and_the_producers_extra_id
         tiny("impossible-fails-01-brush", first, second),
         [
             [turn(calls=[note(2, first.say)]), turn(says="On it.")],
-            [turn(calls=[note(2, first.say, owner_asked=False)]), turn(says="Trying once more.")],
-            [turn(says="Scene 2 is said to camera now.")],
-            [turn(says="I tried twice and couldn't get it; this is the closest I can do.")],
+            [turn(calls=[note(2, first.say, owner_asked=False)]), turn(says="I kept your clip.")],
+            [turn(says="The earlier clip is still in the ad.")],
         ],
     )
 
     found = counts(record)
     assert record["error"] == ""
-    assert found["per_ask"] == [2, 0]
-    assert (found["owner"], found["producer"], found["code"]) == (1, 1, 0)
+    assert found["per_ask"] == [1, 0]
+    assert (found["owner"], found["producer"], found["code"]) == (1, 0, 0)
     assert found["refused_first"] is False
     assert "problems" not in found
 

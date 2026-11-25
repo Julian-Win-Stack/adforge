@@ -75,7 +75,13 @@ def finish_recovery(step: SceneStep) -> bool:
         return False
     fixing = step.agent_fix
     run = scene_agent.current_run(fixing)
-    if not fixing.gave_up or fixing.paused_at or fixing.passed_id or run.finished_at is None:
+    if (
+        run.asked_filing_id is not None
+        or not fixing.gave_up
+        or fixing.paused_at
+        or fixing.passed_id
+        or run.finished_at is None
+    ):
         return False
     if fixing.kept is not None and not work.stale_clip_reason(step.scene, fixing.kept):
         return False
