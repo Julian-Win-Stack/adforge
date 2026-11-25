@@ -473,22 +473,26 @@ def failed_answer(question: Question, answer: AnyAnswer, error: Exception) -> No
     from gateway import catalog
     from jobs import notices
 
-    answer.error = f"{type(error).__name__}: {error}"
     answer.verdict = None
     model = catalog.MODEL_FOR_PURPOSE[purpose(question)]
+    failure = failed_ask(model, error)
+    answer.error = failure.error
+    answer.failed_asks.append(failure)
+    monitoring.failed(notices.EVAL_JUDGE_UNAVAILABLE.name, failure.error, question=question.id)
+
+
+def failed_ask(model: str, error: Exception) -> FailedAsk:
+    """The bill and reason for one evaluation question without a usable answer."""
     inputs = getattr(error, "input_tokens", 0) or 0
     outputs = getattr(error, "output_tokens", 0) or 0
     cached = getattr(error, "cached_tokens", 0) or 0
-    answer.failed_asks.append(
-        FailedAsk(
-            error=answer.error,
-            model=model,
-            at=datetime.now(UTC).isoformat(),
-            input_tokens=inputs,
-            cached_tokens=cached,
-            cache_write_tokens=getattr(error, "cache_write_tokens", 0) or 0,
-            output_tokens=outputs,
-            cost_usd=token_cost(model, inputs, cached, outputs),
-        )
+    return FailedAsk(
+        error=f"{type(error).__name__}: {error}",
+        model=model,
+        at=datetime.now(UTC).isoformat(),
+        input_tokens=inputs,
+        cached_tokens=cached,
+        cache_write_tokens=getattr(error, "cache_write_tokens", 0) or 0,
+        output_tokens=outputs,
+        cost_usd=token_cost(model, inputs, cached, outputs),
     )
-    monitoring.failed(notices.EVAL_JUDGE_UNAVAILABLE.name, answer.error, question=question.id)

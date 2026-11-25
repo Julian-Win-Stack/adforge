@@ -33,7 +33,7 @@ def intentions(case: Case, number: int) -> dict[int, int]:
         scenes = [int(match) for match in _SCENE.findall(case.messages[0].say)]
     if case.kind == "closed_and_new" and number == 5 and len(scenes) == 2:
         return {scenes[0]: 5, scenes[1]: 1}
-    if case.kind == "alternative_fails" and number == 11:
+    if (case.kind, number) in {("alternative_fails", 11), ("much_later", 10)}:
         return dict.fromkeys(scenes, 1)
     introduced = max((ask for ask in _NEW.get(case.kind, ()) if ask <= number), default=1)
     return dict.fromkeys(scenes, introduced)

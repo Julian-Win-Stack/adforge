@@ -59,13 +59,29 @@ def judge_file(path: Path, *, yes: bool, say: TextIO) -> int:
 
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
     django.setup()
+    from adforge import monitoring
+    from evals.judge.ask import failed_ask
+    from jobs import notices
+
     for kind, check in pending:
-        _judge(kind, check)
-        refresh_groups(data)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(data, indent=1))
-        temporary.replace(path)
+        try:
+            _judge(kind, check)
+        except Exception as error:
+            failure = failed_ask(MODEL, error)
+            check.setdefault("failed_asks", []).append(failure.model_dump(mode="json"))
+            _save_report(path, data)
+            monitoring.failed(notices.EVAL_JUDGE_UNAVAILABLE.name, failure.error, question=kind)
+            print(f"Reply judging stopped: {failure.error}", file=say)
+            return 1
+        _save_report(path, data)
     return 0
+
+
+def _save_report(path: Path, data: dict[str, Any]) -> None:
+    refresh_groups(data)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(data, indent=1))
+    temporary.replace(path)
 
 
 def _judge(kind: str, check: dict[str, Any]) -> None:
