@@ -32,7 +32,22 @@ def fix_scene_2(fake_model: FakeModel, session: Session) -> None:
     fake_model.respond(
         "produce",
         turn(
-            calls=[("pass_note", {"scenes": [{"scene": 2, "instruction": TURN, "quotes": [NOTE]}]})]
+            calls=[
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": 2,
+                                "instruction": TURN,
+                                "quotes": [NOTE],
+                                "owner_asked": True,
+                                "new_asked_change": TURN,
+                            }
+                        ]
+                    },
+                )
+            ]
         ),
         turn(says="I'm fixing scene 2."),
         turn(says="Scene 2 is fixed."),

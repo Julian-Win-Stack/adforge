@@ -51,6 +51,7 @@ def test_note_during_render_is_read_after_collecting_once_with_the_owners_exact_
                                     "instruction": "Keep the handle in view.",
                                     "quotes": ["Show its handle"],
                                     "owner_asked": True,
+                                    "new_asked_change": "Show its handle",
                                 }
                             ]
                         },
@@ -76,6 +77,7 @@ def test_note_during_render_is_read_after_collecting_once_with_the_owners_exact_
                                     "instruction": "Frame the rim closely.",
                                     "quotes": ["Show its rim"],
                                     "owner_asked": True,
+                                    "new_asked_change": "Show its rim",
                                 }
                             ]
                         },

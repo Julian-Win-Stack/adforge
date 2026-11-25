@@ -34,6 +34,7 @@ def note(scene: int, said: str, *, owner_asked: bool = True) -> tuple[str, dict[
                     "instruction": f"Change scene {scene}: {said}",
                     "quotes": [said],
                     "owner_asked": owner_asked,
+                    "new_asked_change": said if owner_asked else None,
                 }
             ]
         },

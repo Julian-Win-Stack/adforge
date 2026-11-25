@@ -371,6 +371,7 @@ def _work(agent: Agent, session: Session) -> int:
                     ToolCall.objects.create(
                         session=session,
                         agent=agent.name,
+                        read_up_to=read_up_to,
                         tool=asked.tool,
                         call_id=asked.call_id,
                         **_why_apart(agent, asked.arguments),

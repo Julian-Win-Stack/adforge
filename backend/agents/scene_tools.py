@@ -7,8 +7,9 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, Field
 
+from agents import asked_changes
 from agents.loop import Refused, Tool
-from agents.models import SystemNote, ToolCall
+from agents.models import AskedChangeFiling, SystemNote, ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from chat.models import Message
 from jobs import notices, work
@@ -85,6 +86,12 @@ class SceneNote(BaseModel):
     scene: int
     instruction: str = Field(min_length=1)
     quotes: list[str] = Field(min_length=1)
+    asked_change: int | None = Field(
+        default=None, description="Number of the asked change on file, if it is the same result."
+    )
+    new_asked_change: str | None = Field(
+        default=None, description="One plain sentence saying what new result the owner asked for."
+    )
     owner_asked: bool = Field(
         default=False,
         description="True only when the shop owner asked for this change. Leave it false "
@@ -118,6 +125,12 @@ class PassNote(Tool):
                         if not note.instruction.strip():
                             raise Refused("say what this scene must do in the instruction.")
                         scene = producer._a_checked_scene(call, note.scene)
+                        earlier = (
+                            asked_changes.filed_already(call, scene) if note.owner_asked else ""
+                        )
+                        if earlier:
+                            said.append(earlier)
+                            continue
                         if SceneAgentRun.objects.filter(
                             agent_fix__step__scene=scene,
                             quotes__contains=[{"handed_by": call.pk}],
@@ -140,6 +153,15 @@ class PassNote(Tool):
                             }
                             for quote in verified
                         ]
+                        filing = None
+                        if note.owner_asked:
+                            filing = asked_changes.file_note(
+                                call,
+                                scene,
+                                asked_change=note.asked_change,
+                                new_asked_change=note.new_asked_change,
+                                instruction=note.instruction.strip(),
+                            )
                         from .scene_recovery import retry_quotes
 
                         quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)
@@ -147,19 +169,32 @@ class PassNote(Tool):
                             scene=scene, answered_at__isnull=True, answer__isnull=True
                         ).first()
                         if question is not None and producer._sent_files_since(call, question):
-                            said.append(
-                                producer._hand_the_answer_back(
-                                    call, scene, question, note.instruction, checked_quotes=quotes
-                                )
+                            answer = producer._hand_the_answer_back(
+                                call,
+                                scene,
+                                question,
+                                note.instruction,
+                                checked_quotes=quotes,
+                                asked_filing=filing,
                             )
+                            answer_run = filing.runs.order_by("pk").last() if filing else None
+                            said.append(answer + asked_changes.filed_line(filing, answer_run))
                             continue
-                        opened = open_note(call, note, scene, quotes)
+                        opened = open_note(call, note, scene, quotes, asked_filing=filing)
                         if isinstance(opened, str):
-                            said.append(opened)
+                            said.append(asked_changes.note_could_not_start(filing, opened))
                             continue
-                        said.append(
+                        answer = (
                             f"Scene {scene.number}'s note opens a new run in its same chat; "
                             "you will be told how it ends."
+                        )
+                        previous = opened.agent_fix.scene_runs.filter(
+                            number=opened.number - 1, reason=SceneAgentRun.SUPERSEDED
+                        ).first()
+                        said.append(
+                            answer
+                            + asked_changes.filed_line(filing, opened)
+                            + asked_changes.run_ended(opened.agent_fix.step, previous)
                         )
                 except Refused as error:
                     said.append(f"Scene {note.scene}'s note was refused: {error}")
@@ -167,7 +202,12 @@ class PassNote(Tool):
 
 
 def open_note(
-    call: ToolCall, note: SceneNote, scene: Scene, quotes: list[dict[str, Any]]
+    call: ToolCall,
+    note: SceneNote,
+    scene: Scene,
+    quotes: list[dict[str, Any]],
+    *,
+    asked_filing: AskedChangeFiling | None = None,
 ) -> SceneAgentRun | str:
     """Open the normal note window; historical question answers use the same entry."""
     from . import scene_agent
@@ -177,28 +217,33 @@ def open_note(
         kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
     ).first()
     if step is None:
-        return _start_idle_note(call, note, quotes)
-    else:
-        fixing = scene_agent.started(step)
-        window = scene_agent.current_run(fixing)
+        return _start_idle_note(call, note, quotes, asked_filing=asked_filing)
+    fixing = scene_agent.started(step)
+    window = scene_agent.current_run(fixing)
+    if window.finished_at is None:
         window.finished_at = timezone.now()
-        window.reason = "Superseded by a new owner note."
+        window.reason = SceneAgentRun.SUPERSEDED
         window.save(update_fields=["finished_at", "reason"])
-        snapshot = {field: getattr(scene, field) for field in SNAPSHOT}
-        opened = SceneAgentRun.objects.create(
-            agent_fix=fixing,
-            number=window.number + 1,
-            instruction=note.instruction.strip(),
-            quotes=quotes,
-            scene_before=snapshot,
-        )
-        fixing.scene_before = snapshot
-        fixing.save(update_fields=["scene_before"])
-        return opened
+    snapshot = {field: getattr(scene, field) for field in SNAPSHOT}
+    opened = SceneAgentRun.objects.create(
+        agent_fix=fixing,
+        number=window.number + 1,
+        instruction=note.instruction.strip(),
+        quotes=quotes,
+        scene_before=snapshot,
+        asked_filing=asked_filing,
+    )
+    fixing.scene_before = snapshot
+    fixing.save(update_fields=["scene_before"])
+    return opened
 
 
 def _start_idle_note(
-    call: ToolCall, note: SceneNote, quotes: list[dict[str, Any]]
+    call: ToolCall,
+    note: SceneNote,
+    quotes: list[dict[str, Any]],
+    *,
+    asked_filing: AskedChangeFiling | None = None,
 ) -> SceneAgentRun | str:
     from . import scene_agent
 
@@ -218,7 +263,8 @@ def _start_idle_note(
     fixing = scene_agent.started(step)
     window = scene_agent.current_run(fixing)
     window.quotes = quotes
-    window.save(update_fields=["quotes"])
+    window.asked_filing = asked_filing
+    window.save(update_fields=["quotes", "asked_filing"])
     return window
 
 
@@ -249,6 +295,7 @@ def start_pending_note(step: SceneStep) -> bool:
                         quotes=[quote["text"] for quote in pending.quotes],
                     ),
                     pending.quotes,
+                    asked_filing=pending.asked_filing,
                 )
         except Exception as error:
             logger.exception("Pending note for scene %s couldn't start", step.scene.number)
@@ -268,15 +315,16 @@ def start_pending_note(step: SceneStep) -> bool:
                 "pass_note yourself. Respect the owner’s pause and paid-change consent; "
                 "otherwise continue without waiting for another owner message."
             )
+            pending.step_failed = True
             SystemNote.objects.create(
                 session=step.tool_call.session,
                 kind=SystemNote.Kind.NOTE_WAITING,
-                text=pending.reason,
+                text=pending.reason + asked_changes.run_ended(step, pending),
             )
         else:
             pending.reason = scene_agent.PENDING_NOTE_DELIVERED
         pending.finished_at = timezone.now()
-        pending.save(update_fields=["finished_at", "reason"])
+        pending.save(update_fields=["finished_at", "reason", "step_failed"])
         return True
 
 

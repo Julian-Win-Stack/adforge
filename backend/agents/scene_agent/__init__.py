@@ -1,11 +1,12 @@
 """A checkpointed scene conversation, with a separate money window for each run."""
 
+from contextlib import nullcontext
 from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
 
-from agents import loop
+from agents import asked_changes, loop
 from agents.models import ToolCall
 from agents.owner_quotes import check_session_quotes
 from chat import messages
@@ -29,7 +30,7 @@ from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 from .make_end_picture import MakeEndPicture
 
-PENDING_NOTE_DELIVERED = "Handed to the next scene step."
+PENDING_NOTE_DELIVERED = SceneAgentRun.PENDING_DELIVERED
 AGENT = "scene_agent"
 PURPOSE = "scene_agent"
 TOOLS: list[type[loop.Tool]] = [
@@ -237,6 +238,15 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
 def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = False) -> None:
     """Recover paid work in flight; a paused scene starts no untouched checkpoint."""
     recovering_paid = recovering and call.model_calls.exists()
+    if (
+        recovering
+        and call.scene_run_id is not None
+        and call.scene_run_id != current_run(fixing).pk
+        and not recovering_paid
+        and not fixing.tries.filter(tool_call=call).exists()
+    ):
+        loop._refuse_unrun(call, "a new note arrived before this checkpoint started.")
+        return
     if not recovering_paid:
         lifecycle._parked_by_the_pause(fixing)
     if lifecycle._ended(fixing):
@@ -250,9 +260,10 @@ def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = F
         }:
             step = fixing.step
             try:
-                work.person_and_room(
-                    step, work.person_shown_for(step.scene.kind, step.scene.person_shown)
-                )
+                with charged_to(call) if call.scene_run_id is not None else nullcontext():
+                    work.person_and_room(
+                        step, work.person_shown_for(step.scene.kind, step.scene.person_shown)
+                    )
             except work.PlaceNotDrawn as error:
                 work.say_the_place_wasnt_drawn(step, error)
                 raise
@@ -262,8 +273,14 @@ def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = F
 def run(step: SceneStep) -> ProducedItem | None:
     fixing = started(step)
     if step.scene.owner_part and not owner_parts.picture_is_current(step.scene):
+        window = current_run(fixing)
         try:
-            owner_parts.draw_part_picture(step.scene)
+            with (
+                charged_to(lifecycle._turns(fixing, window))
+                if window.asked_filing_id is not None
+                else nullcontext()
+            ):
+                owner_parts.draw_part_picture(step.scene)
         except owner_parts.PartPictureFailed as failed:
             finish(fixing, str(failed))
             fixing.refresh_from_db()
@@ -288,10 +305,10 @@ def run(step: SceneStep) -> ProducedItem | None:
         if loop.paused(step.tool_call.session):
             lifecycle._parked_by_the_pause(fixing)
             break
-        turn_run_id = current_run(fixing).pk
+        window = current_run(fixing)
         # change_scene saves its own copy of the scene: the rules follow its kind and place now.
         step.scene.refresh_from_db(fields=["kind", "number"])
-        with charged_to(lifecycle._turns(fixing)):
+        with charged_to(lifecycle._turns(fixing, window)):
             turn = loop.take_a_turn(
                 session=step.tool_call.session,
                 job=step.scene.job,
@@ -322,6 +339,7 @@ def run(step: SceneStep) -> ProducedItem | None:
                     job=step.scene.job,
                     agent=AGENT,
                     agent_fix=fixing,
+                    scene_run=window if window.asked_filing_id is not None else None,
                     tool=asked.tool,
                     call_id=asked.call_id,
                     arguments=asked.arguments,
@@ -330,7 +348,7 @@ def run(step: SceneStep) -> ProducedItem | None:
             ]
         for call in calls:
             fixing.refresh_from_db()
-            if current_run(fixing).pk != turn_run_id:
+            if current_run(fixing).pk != window.pk:
                 loop._refuse_unrun(
                     call, "a new note arrived; read it before choosing your next tool."
                 )
@@ -353,6 +371,8 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
             "after its one extra run, finish with the clip or the automatic talking recovery."
         )
     run = current_run(fixing)
+    if fixing.finished_at is not None and run.created_at > fixing.finished_at:
+        run = fixing.scene_runs.filter(finished_at__isnull=False).order_by("number").last() or run
     if run.reason.startswith(HANDED_BACK):
         end = (
             run.reason + " If the owner asked for words shown on screen, set them as the overlay "
@@ -377,7 +397,8 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         if made is not None and (made.ruling or {}).get("verdict") == "not_checked"
         else ""
     )
+    asked = asked_changes.run_ended(step, run)
     return (
         f"Background step finished: scene {step.scene.number}'s agent {end}."
-        f"{_cost(step)}{unchecked}"
+        f"{asked or _cost(step)}{unchecked}"
     )

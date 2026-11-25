@@ -4174,6 +4174,8 @@ def _make_clip(
         made.write_bytes(file_store.read(file))
         seconds = assembly.seconds_of(made)
     with transaction.atomic():
+        # PassNote uses this same lock to count a saved clip and replace a running note.
+        Job.objects.select_for_update().get(pk=job.pk)
         clip = ProducedItem.objects.create(
             job=job,
             scene=scene,

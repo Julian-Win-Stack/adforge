@@ -197,14 +197,17 @@ def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
     return fixing.tool_calls.exclude(tool=TURNS).order_by("created_at", "id")
 
 
-def _turns(fixing: AgentFix) -> ToolCall:
+def _turns(fixing: AgentFix, window: SceneAgentRun) -> ToolCall:
+    run = window if window.asked_filing_id is not None else None
+    label = f"{AGENT}-{fixing.pk}-turns"
     call, _ = ToolCall.objects.get_or_create(
         session=fixing.step.tool_call.session,
-        call_id=f"{AGENT}-{fixing.pk}-turns",
+        call_id=f"{label}-{run.pk}" if run is not None else label,
         defaults={
             "job": fixing.step.scene.job,
             "agent": AGENT,
             "agent_fix": fixing,
+            "scene_run": run,
             "tool": TURNS,
             "arguments": {},
             "finished_at": timezone.now(),

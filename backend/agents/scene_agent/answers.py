@@ -39,6 +39,7 @@ def receive(
                 previous.save(update_fields=["finished_at"])
             next_run = SceneAgentRun.objects.create(
                 agent_fix=fixing,
+                asked_filing_id=(question.answer or {}).get("asked_filing"),
                 number=previous.number + 1,
                 instruction=instruction,
                 quotes=_keeping_the_owner_mark(previous, (question.answer or {}).get("quotes", [])),

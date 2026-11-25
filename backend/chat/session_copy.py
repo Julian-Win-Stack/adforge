@@ -15,7 +15,16 @@ from typing import Any, cast
 
 from django.db import models, transaction
 
-from agents.models import PlannerQuestion, RefusedPicture, SystemNote, ToolCall
+from agents.models import (
+    AskedChange,
+    AskedChangeBrief,
+    AskedChangeFiling,
+    AskedChangeScene,
+    PlannerQuestion,
+    RefusedPicture,
+    SystemNote,
+    ToolCall,
+)
 from gateway.models import ModelCall, SystemPrompt
 from jobs import notices
 from jobs.models import (
@@ -43,6 +52,10 @@ MODELS: tuple[Model, ...] = (
     Session,
     Message,
     Attachment,
+    AskedChange,
+    AskedChangeScene,
+    AskedChangeFiling,
+    AskedChangeBrief,
     ToolCall,
     SystemNote,
     RefusedPicture,
@@ -89,7 +102,11 @@ IDS_IN_JSON: dict[tuple[Model, str], list[tuple[Path, Model]]] = {
         (("*", "handed_by"), ToolCall),
         (("*", "producer_recovery"), Message),
     ],
-    (OwnerQuestion, "answer"): [(("delivery_scene",), Scene), (("delivery_run",), SceneAgentRun)],
+    (OwnerQuestion, "answer"): [
+        (("delivery_scene",), Scene),
+        (("delivery_run",), SceneAgentRun),
+        (("asked_filing",), AskedChangeFiling),
+    ],
 }
 # Every other JSON field of these tables, read and found to keep no row ids: file-store keys,
 # library numbers, scene numbers, words and model answers.

@@ -60,6 +60,7 @@ def test_an_owner_note_remake_passes_on_the_clip_judge_alone(
                                 "instruction": note,
                                 "quotes": [note],
                                 "owner_asked": True,
+                                "new_asked_change": note,
                             }
                         ]
                     },
@@ -130,6 +131,7 @@ def test_a_note_about_matching_two_scenes_passes_both_remakes(
                                 "instruction": instruction,
                                 "quotes": [note],
                                 "owner_asked": True,
+                                "new_asked_change": note,
                             }
                             for number, instruction in (
                                 (2, "Pour into the mug at the desk."),
@@ -176,6 +178,7 @@ def test_resuming_an_old_try_ignores_its_stored_fix_check_failure(
                         "instruction": "Pour from the right.",
                         "quotes": ["Go on"],
                         "owner_asked": True,
+                        "new_asked_change": "Go on",
                     }
                 ]
             },

@@ -212,6 +212,7 @@ def test_a_volunteered_photo_after_give_up_opens_a_new_run(
                                 "instruction": WITH_IT,
                                 "quotes": [GREEN_PHOTO],
                                 "owner_asked": True,
+                                "new_asked_change": GREEN_PHOTO,
                             }
                         ]
                     },
