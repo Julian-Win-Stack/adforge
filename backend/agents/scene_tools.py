@@ -114,12 +114,14 @@ class PassNote(Tool):
         if len({note.scene for note in self.scenes}) != len(self.scenes):
             raise Refused("name each scene once, with all its instruction and quotes.")
         said = []
+        related_changes: set[int] = set()
         with transaction.atomic():
             # Serialize every scene's window against the worker's finished-step handling.
             job = producer._the_job(call)
             if job is not None:
                 Job.objects.select_for_update().get(pk=job.pk)
             for note in self.scenes:
+                filing = None
                 try:
                     # A refused scene rolls back only its own handoff.
                     with transaction.atomic():
@@ -154,7 +156,6 @@ class PassNote(Tool):
                             }
                             for quote in verified
                         ]
-                        filing = None
                         if note.owner_asked:
                             filing = asked_changes.file_note(
                                 call,
@@ -197,17 +198,25 @@ class PassNote(Tool):
                         previous = opened.agent_fix.scene_runs.filter(
                             number=opened.number - 1, reason=SceneAgentRun.SUPERSEDED
                         ).first()
+                        if previous is not None and previous.asked_filing is not None:
+                            related_changes.add(previous.asked_filing.coverage.change_id)
                         said.append(
                             answer
                             + asked_changes.filed_line(filing, opened)
-                            + asked_changes.run_ended(opened.agent_fix.step, previous)
+                            + asked_changes.run_ended(
+                                opened.agent_fix.step, previous, include_linked=False
+                            )
                         )
                 except Refused as error:
                     answer = f"Scene {note.scene}'s note was refused: {error}"
                     if isinstance(error, asked_changes.BriefBeforeRepeat):
                         asked_changes.record_repeat_brief(error, answer)
+                    if isinstance(error, asked_changes.AskedChangeRefused):
+                        related_changes.add(error.change_id)
+                    if filing is not None:
+                        related_changes.add(filing.coverage.change_id)
                     said.append(answer)
-            said.extend(asked_changes.linked_filing_lines(call))
+            said.extend(asked_changes.linked_filing_lines(call, related_changes))
         return "\n".join(said)
 
 

@@ -5,7 +5,7 @@ The case file is checked on load. A malformed file is refused with the case it i
 before anything runs or is paid for."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -135,6 +135,8 @@ class OwnerMessage:
     reason: str = ""
     # Whether the report expects any run to open in answer to this message.
     expected_try: bool | None = None
+    # Outcomes for particular scenes when one message asks for a linked change.
+    by_scene: dict[int, Ending] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
