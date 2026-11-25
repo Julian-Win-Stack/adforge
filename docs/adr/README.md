@@ -20,6 +20,7 @@ so you can follow how the design changed.
 | [0012](0012-every-scene-made-with-h3.md) | Nov 3 | Every scene made by its scene agent with H3 speaking the line; HeyGen and Inworld retired | 0014 (word-check decisions only) |
 | [0013](0013-more-broll-whole-clips.md) | Nov 6 | Middle scenes B-roll by default, at least one B-roll scene per ad, talking scenes in different styles and product states, the lens only first or last; silent B-roll shots over her voice turned down | |
 | [0014](0014-script-captions-without-word-check.md) | Nov 14 | Remove the clip word check; captions always show the script, timed from the transcript | |
+| [0015](0015-code-counts-tries-for-asked-changes.md) | Nov 24 | The producer identifies asked changes and code counts tries per scene | |
 
 All dates are 2026. "Since" is when the page first appears in this repository. The repository's
 history starts on Oct 19, so a decision made before then shows "Oct 19 or earlier".
