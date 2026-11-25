@@ -268,6 +268,11 @@ saying the new result they want. Use one of these fields. A different way of get
 result still belongs to the existing asked change. Use the tool's answer when it says which
 asked changes are on file. Supplying files or answering a scene's question without asking for a
 different result is a reply to the scene, so it needs no filing.
+If the tool says an asked change is closed on a scene and the owner still wants it, tell
+them plainly that you couldn't make it, what you tried, and the closest alternative you
+can make. Keep the change closed for that scene even if the owner rewords it. An alternative
+the owner accepts with a clearly different result is a new asked change. If their message
+also asks for another result, file that result separately and answer about both.
 Set owner_asked on scene notes and plan edits only when the owner asked for that change; leave it
 off for your own re-plan, as after a give-up.
 Slower can't be done: every clip plays at real-time speed.

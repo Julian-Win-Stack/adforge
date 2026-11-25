@@ -1,9 +1,11 @@
 """File owner asks, count their scene runs, and read back what happened."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal, TypedDict
 
+from django.conf import settings
 from django.db.models import Max, Q, QuerySet, Sum
 
 from agents.loop import Refused
@@ -15,6 +17,14 @@ from jobs import stale
 from jobs.models import AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 DID_NOT_COUNT = "This run did not count as a try."
+
+
+def try_limit() -> int:
+    return settings.ASKED_CHANGE_TRY_LIMIT
+
+
+def is_closed(total_tries: int) -> bool:
+    return total_tries >= try_limit()
 
 
 def owner_message_for(call: ToolCall) -> Message | None:
@@ -67,10 +77,11 @@ def file_note(
         coverage = AskedChangeScene.objects.create(
             change=change, scene=scene, before_clip=stale.current_clip(scene)
         )
+    refusal = _closed_refusal(coverage, message)
     filing, _ = AskedChangeFiling.objects.get_or_create(
         coverage=coverage,
         tool_call=call,
-        defaults={"owner_message": message, "instruction": instruction},
+        defaults={"owner_message": message, "instruction": instruction, "refusal": refusal},
     )
     return filing
 
@@ -107,14 +118,19 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
         return ""
     filing = run.asked_filing
     change = filing.coverage.change
+    closing = ""
     if not counted(run, step):
         status = DID_NOT_COUNT
     else:
         number = _try_number(run)
         status = f"This was try {number}."
+        if is_closed(number):
+            closing = " No tries are left on this scene. " + _closing_guidance()
+        else:
+            closing = " Tries remain."
     return (
         f" Asked change #{change.number}, {change.description.rstrip('.')}, "
-        f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}."
+        f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}.{closing}"
     )
 
 
@@ -166,6 +182,44 @@ def tries_for(coverage: AskedChangeScene) -> list[SceneAgentRun]:
     return [run for run in runs if counted(run)]
 
 
+def tries_before_note(coverage: AskedChangeScene, message: Message) -> list[SceneAgentRun]:
+    """Count the tries that will still count if this note opens a new window."""
+    tries = tries_for(coverage)
+    if tries:
+        latest = tries[-1]
+        filing = latest.asked_filing
+        assert filing is not None
+        if (
+            latest.finished_at is None
+            and latest.agent_fix.step.status == SceneStep.Status.RUNNING
+            and filing.owner_message.seq < message.seq
+            and not made_clip(latest)
+        ):
+            return tries[:-1]
+    return tries
+
+
+def _closed_refusal(coverage: AskedChangeScene, message: Message) -> str:
+    tries = tries_before_note(coverage, message)
+    if not is_closed(len(tries)):
+        return ""
+    change = coverage.change
+    return (
+        f"Scene {coverage.scene.number}'s note was refused: asked change #{change.number}, "
+        f"{change.description.rstrip('.')}, is closed on this scene. "
+        f"All {len(tries)} tries have been used. {_closing_guidance()}\n{try_history(tries)}"
+    )
+
+
+def _closing_guidance() -> str:
+    return (
+        "If the owner is still dissatisfied, say plainly that you couldn't make this change. "
+        "Say what you tried and offer the closest alternative you can make. "
+        "A clearly different result the owner accepts is a new asked change. "
+        "The same result in different words or a new way to reach it is still the closed change."
+    )
+
+
 def run_cost(run: SceneAgentRun) -> Decimal:
     cost: Decimal | None = ModelCall.objects.filter(tool_call__scene_run=run).aggregate(
         cost=Sum("cost_usd")
@@ -213,6 +267,7 @@ class SceneRecord(TypedDict):
     removed: bool
     before_version: int | None
     tries: int
+    closed: bool
     asks: list[AskRecord]
 
 
@@ -222,7 +277,7 @@ class ChangeRecord(TypedDict):
     scenes: list[SceneRecord]
 
 
-def _run_record(run: SceneAgentRun, number: int | None) -> RunRecord:
+def _outcome(run: SceneAgentRun) -> tuple[Outcome, int | None]:
     passed_clip = (
         _clip_rows(run)
         .filter(passed=True, clip__isnull=False)
@@ -241,6 +296,24 @@ def _run_record(run: SceneAgentRun, number: int | None) -> RunRecord:
         outcome = "running"
     else:
         outcome = "gave_up"
+    return outcome, passed_clip
+
+
+def try_history(runs: Sequence[SceneAgentRun]) -> str:
+    """Tell the producer what was tried, how each try ended, and its cost."""
+    lines = []
+    for number, run in enumerate(runs, 1):
+        outcome, _ = _outcome(run)
+        detail = f" ({run.reason})" if run.reason else ""
+        lines.append(
+            f"Try {number}: {run.instruction} · {outcome.replace('_', ' ')}{detail} "
+            f"· {dollars(run_cost(run))}"
+        )
+    return "\n".join(lines)
+
+
+def _run_record(run: SceneAgentRun, number: int | None) -> RunRecord:
+    outcome, passed_clip = _outcome(run)
     return RunRecord(
         instruction=run.instruction,
         try_number=number,
@@ -286,6 +359,7 @@ def _scene_record(coverage: AskedChangeScene) -> SceneRecord:
         removed=coverage.scene.removed_at is not None,
         before_version=coverage.before_clip.version if coverage.before_clip else None,
         tries=len(numbered),
+        closed=is_closed(len(numbered)),
         asks=list(asks.values()),
     )
 

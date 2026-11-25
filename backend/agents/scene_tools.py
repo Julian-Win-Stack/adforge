@@ -162,6 +162,9 @@ class PassNote(Tool):
                                 new_asked_change=note.new_asked_change,
                                 instruction=note.instruction.strip(),
                             )
+                            if filing.refusal:
+                                said.append(filing.refusal)
+                                continue
                         from .scene_recovery import retry_quotes
 
                         quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)
