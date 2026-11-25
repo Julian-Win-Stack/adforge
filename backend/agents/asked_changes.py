@@ -9,7 +9,13 @@ from django.conf import settings
 from django.db.models import Max, Q, QuerySet, Sum
 
 from agents.loop import Refused
-from agents.models import AskedChange, AskedChangeFiling, AskedChangeScene, ToolCall
+from agents.models import (
+    AskedChange,
+    AskedChangeBrief,
+    AskedChangeFiling,
+    AskedChangeScene,
+    ToolCall,
+)
 from agents.money import dollars
 from chat.models import Message, Session
 from gateway.models import ModelCall
@@ -17,6 +23,12 @@ from jobs import stale
 from jobs.models import AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 DID_NOT_COUNT = "This run did not count as a try."
+
+
+class BriefBeforeRepeat(Refused):
+    def __init__(self, filing: AskedChangeFiling, reason: str) -> None:
+        self.filing = filing
+        super().__init__(reason)
 
 
 def try_limit() -> int:
@@ -83,7 +95,48 @@ def file_note(
         tool_call=call,
         defaults={"owner_message": message, "instruction": instruction, "refusal": refusal},
     )
+    if asked_change is not None and not filing.refusal:
+        _brief_repeat(filing)
     return filing
+
+
+def _brief_repeat(filing: AskedChangeFiling) -> None:
+    coverage = filing.coverage
+    message = filing.owner_message
+    if AskedChangeBrief.objects.filter(scene_id=coverage.scene_id, owner_message=message).exists():
+        return
+    previous = [
+        run
+        for run in tries_before_note(coverage, message)
+        if run.asked_filing is not None and run.asked_filing.owner_message.seq < message.seq
+    ]
+    if previous:
+        raise BriefBeforeRepeat(
+            filing,
+            f"Try history for asked change #{coverage.change.number}\n"
+            f"{try_history(previous)}\n"
+            "Send the note again for the next try. Use a clearly different kind of action "
+            "from every earlier try. If the note you just sent already does that, resend it "
+            "as is. Tries remain, so tell the owner what is still wrong without saying the "
+            "change can't be made.",
+        )
+
+
+def record_repeat_brief(brief: BriefBeforeRepeat, answer: str) -> None:
+    """Store what was told after the refused scene handoff has rolled back."""
+    filing = brief.filing
+    AskedChangeBrief.objects.get_or_create(
+        scene_id=filing.coverage.scene_id, owner_message_id=filing.owner_message_id
+    )
+    AskedChangeFiling.objects.update_or_create(
+        coverage_id=filing.coverage_id,
+        tool_call_id=filing.tool_call_id,
+        defaults={
+            "owner_message_id": filing.owner_message_id,
+            "instruction": filing.instruction,
+            "refusal": answer,
+        },
+    )
 
 
 def filed_already(call: ToolCall, scene: Scene) -> str:
@@ -118,19 +171,35 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
         return ""
     filing = run.asked_filing
     change = filing.coverage.change
-    closing = ""
+    guidance = ""
     if not counted(run, step):
         status = DID_NOT_COUNT
     else:
         number = _try_number(run)
         status = f"This was try {number}."
         if is_closed(number):
-            closing = " No tries are left on this scene. " + _closing_guidance()
+            guidance = " No tries are left on this scene. " + _closing_guidance()
         else:
-            closing = " Tries remain."
+            guidance = _unfinished_try_line(run) or " Tries remain."
     return (
         f" Asked change #{change.number}, {change.description.rstrip('.')}, "
-        f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}.{closing}"
+        f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}.{guidance}"
+    )
+
+
+def _unfinished_try_line(run: SceneAgentRun) -> str:
+    from agents.scene_agent.hand_back import HANDED_BACK
+
+    if (
+        (not run.step_failed and not run.reason)
+        or run.reason == SceneAgentRun.SUPERSEDED
+        or run.reason.startswith(HANDED_BACK)
+        or run.agent_fix.paused_at is not None
+    ):
+        return ""
+    return (
+        " Tries remain. Tell the owner what is still wrong, what this try did, and its cost. "
+        "Say the change is still open."
     )
 
 

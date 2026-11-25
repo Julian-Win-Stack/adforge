@@ -200,7 +200,10 @@ class PassNote(Tool):
                             + asked_changes.run_ended(opened.agent_fix.step, previous)
                         )
                 except Refused as error:
-                    said.append(f"Scene {note.scene}'s note was refused: {error}")
+                    answer = f"Scene {note.scene}'s note was refused: {error}"
+                    if isinstance(error, asked_changes.BriefBeforeRepeat):
+                        asked_changes.record_repeat_brief(error, answer)
+                    said.append(answer)
         return "\n".join(said)
 
 

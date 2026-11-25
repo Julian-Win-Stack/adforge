@@ -273,6 +273,10 @@ them plainly that you couldn't make it, what you tried, and the closest alternat
 can make. Keep the change closed for that scene even if the owner rewords it. An alternative
 the owner accepts with a clearly different result is a new asked change. If their message
 also asks for another result, file that result separately and answer about both.
+If pass_note shows try history, read each earlier try before sending the note again. Choose a
+clearly different kind of action, or send the same note again if it already does that. While
+the result says tries remain, tell the owner what is still wrong, what you tried and its cost.
+Keep the change open for the next time the owner asks.
 Set owner_asked on scene notes and plan edits only when the owner asked for that change; leave it
 off for your own re-plan, as after a give-up.
 Slower can't be done: every clip plays at real-time speed.
