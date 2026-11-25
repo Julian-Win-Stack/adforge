@@ -32,18 +32,20 @@ def score(session: dict[str, Any], changes: list[ChangeRecord], case: Case) -> d
     asks = session["asks"]
     if case.kind == "one_scene_fails":
         refilmed = sum(
-            run["scene"] in (1, 3) for ask in asks if ask["number"] > 1 for run in ask["runs"]
+            run["scene"] in (1, 3) for ask in asks if ask["number"] > 1 for run in _filmed(ask)
         )
         return {"refilmed_other_scenes": refilmed}
     if case.way_out is not None:
         label, films, restores = CHOICES[case.way_out]
         pick = next((ask for ask in asks if ask["number"] == 5), None)
-        filmed = sorted(run["scene"] for run in pick["runs"]) if pick else []
+        runs = _filmed(pick) if pick else []
+        filmed = sorted(run["scene"] for run in runs)
         restored = pick.get("restored", []) if pick else []
         # The initial scripted ad takes one passing clip per scene, its v1.
         exact = (
             pick is not None
             and filmed == list(films)
+            and all(run.get("passed") for run in runs)
             and [(entry["scene"], entry["version"]) for entry in restored]
             == [(scene, 1) for scene in restores]
         )
@@ -62,10 +64,14 @@ def score(session: dict[str, Any], changes: list[ChangeRecord], case: Case) -> d
     return {}
 
 
+def _filmed(ask: dict[str, Any]) -> list[dict[str, Any]]:
+    return [run for run in ask["runs"] if run.get("filmed")]
+
+
 def _joined(asks: list[dict[str, Any]], changes: list[ChangeRecord]) -> bool:
     first = next((ask for ask in asks if ask["number"] == 1), None)
     joins = next((ask for ask in asks if ask["number"] == 2), None)
-    if not first or not joins or [run["scene"] for run in joins["runs"]] != [4]:
+    if not first or not joins or [run["scene"] for run in _filmed(joins)] != [4]:
         return False
     for change in changes:
         initially_covered = {

@@ -489,6 +489,7 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         if handed_by is not None
         else run.agent_fix.step.tool_call.tool
     )
+    ending, passed = _ended(run)
     return {
         "scene": run.agent_fix.step.scene.number,
         "instruction": run.instruction,
@@ -496,24 +497,26 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
         "retry": any(RETRY in quote for quote in quotes),
         "tool": tool,
         "clips": run.clips,
-        "ended": _ended(run),
+        "filmed": asked_changes.made_clip(run),
+        "passed": passed,
+        "ended": ending,
     }
 
 
-def _ended(run: SceneAgentRun) -> str:
+def _ended(run: SceneAgentRun) -> tuple[str, bool]:
     fixing = run.agent_fix
     step = fixing.step
     last = fixing.scene_runs.order_by("-pk").first()
     current = last is not None and last.pk == run.pk
     if run.reason:
-        return run.reason
-    if current and step.status == SceneStep.Status.FAILED and step.reason:
-        return step.reason
+        return run.reason, False
+    if current and step.status == SceneStep.Status.FAILED:
+        return step.reason or "the step failed", False
     if current and fixing.gave_up:
-        return f"gave up: {fixing.gave_up}"
+        return f"gave up: {fixing.gave_up}", False
     if current and fixing.passed_id is not None:
-        return "made a clip that passed its check"
-    return "ended without a passing clip"
+        return "made a clip that passed its check", True
+    return "ended without a passing clip", False
 
 
 def _spent(start: Before) -> Decimal:

@@ -49,7 +49,9 @@ def test_page_shows_linked_choices_alongside_the_earlier_results(tmp_path: Path)
     record = {
         "case": "picks-shot-01-brush",
         "repeat": 1,
-        "asks": [{"number": 5, "runs": [{"scene": 2, "origin": "owner"}]}],
+        "asks": [
+            {"number": 5, "runs": [{"scene": 2, "origin": "owner", "filmed": True, "passed": True}]}
+        ],
     }
     linked.write_text(json.dumps(summarize([record], cases.load_cases(cases.LINKED_CASES_FILE))))
     html = tmp_path / "results.html"
@@ -97,7 +99,10 @@ def test_the_choice_score_requires_exactly_the_scenes_and_versions_the_owner_pic
         "asks": [
             {
                 "number": 5,
-                "runs": [{"scene": scene, "origin": "owner"} for scene in filmed],
+                "runs": [
+                    {"scene": scene, "origin": "owner", "filmed": True, "passed": True}
+                    for scene in filmed
+                ],
                 "restored": restored,
             }
         ],
@@ -105,6 +110,80 @@ def test_the_choice_score_requires_exactly_the_scenes_and_versions_the_owner_pic
     report = summarize([record], cases.load_cases(cases.LINKED_CASES_FILE))
     choices = report["groups"]["picks_way_out"]["linked"]["choices"]
     assert [choice["exact"] for choice in choices] == [exact]
+
+
+@pytest.mark.parametrize("filmed", [False, True])
+def test_a_failed_camera_run_does_not_fulfill_a_shot_choice(filmed: bool) -> None:
+    from evals.repeated_asks.per_ask import summarize
+
+    record = {
+        "case": "picks-shot-01-brush",
+        "repeat": 1,
+        "asks": [
+            {
+                "number": 5,
+                "runs": [
+                    {
+                        "scene": 2,
+                        "origin": "owner",
+                        "filmed": filmed,
+                        "passed": False,
+                        "clips": 1,
+                        "ended": "Camera failed",
+                    }
+                ],
+            }
+        ],
+    }
+    report = summarize([record], cases.load_cases(cases.LINKED_CASES_FILE))
+    (choice,) = report["groups"]["picks_way_out"]["linked"]["choices"]
+    assert not choice["exact"]
+    assert choice["filmed"] == ([2] if filmed else [])
+
+
+def test_joining_requires_a_film_in_addition_to_an_opened_try() -> None:
+    from evals.repeated_asks.per_ask import summarize
+
+    record = {
+        "case": "joins-later-01-roller",
+        "repeat": 1,
+        "try_limit": 3,
+        "asks": [
+            {"number": 1, "message_id": 10, "runs": []},
+            {
+                "number": 2,
+                "message_id": 20,
+                "runs": [{"scene": 4, "origin": "owner", "filmed": False, "passed": False}],
+            },
+        ],
+        "asked_changes": [
+            {
+                "number": 1,
+                "description": "Use warmer light",
+                "scenes": [
+                    {
+                        "scene": scene,
+                        "tries": 1,
+                        "closed": False,
+                        "asks": [{"message_id": 10, "runs": []}],
+                    }
+                    for scene in (1, 2, 3)
+                ]
+                + [
+                    {
+                        "scene": 4,
+                        "tries": 1,
+                        "closed": False,
+                        "asks": [
+                            {"message_id": 20, "runs": [{"try_number": 1, "outcome": "gave_up"}]}
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    report = summarize([record], cases.load_cases(cases.LINKED_CASES_FILE))
+    assert report["groups"]["scene_joins_later"]["linked"]["joined_on_first_try"] == 0
 
 
 def test_linked_reply_question_is_judged_from_the_saved_report(
