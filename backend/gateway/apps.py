@@ -1,4 +1,5 @@
 import logging
+import os
 from urllib.parse import urlparse
 
 from django.apps import AppConfig
@@ -40,7 +41,25 @@ class GatewayConfig(AppConfig):
                 "on OpenAI's own API); text and vision calls go to %s",
                 others,
             )
+        if settings.AZURE_SECOND_KEY:
+            logger.warning(
+                "Calls to %s go to %s, the second Azure account",
+                ", ".join(sorted(settings.AZURE_SECOND_MODELS)),
+                _host(settings.AZURE_SECOND_BASE_URL),
+            )
+        elif any(os.environ.get(name) for name in _SECOND_AZURE_SETTINGS):
+            logger.warning(
+                "Not all of %s are set, so every model stays on the main account",
+                ", ".join(_SECOND_AZURE_SETTINGS),
+            )
         tracing.say_if_off()
+
+
+_SECOND_AZURE_SETTINGS = (
+    "AZURE_OPENAI_SECOND_KEY",
+    "AZURE_OPENAI_SECOND_BASE_URL",
+    "AZURE_OPENAI_SECOND_MODELS",
+)
 
 
 def _host(address: str) -> str:
