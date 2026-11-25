@@ -238,7 +238,7 @@ def _write_run(out: Path, name: str, cases: Sequence[Case], repeats: int, cost: 
         "name": name,
         "started_at": datetime.now(UTC).isoformat(),
         "app_commit": _commit(),
-        "problem_list": _has_problem_list(),
+        "asked_changes": True,
         "cases": [case.id for case in cases],
         "repeats": repeats,
         "estimate_usd": str(cost),
@@ -251,7 +251,3 @@ def _commit() -> str:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BACKEND, text=True).strip()
     except OSError, subprocess.CalledProcessError:
         return ""
-
-
-def _has_problem_list() -> bool:
-    return (BACKEND / "agents" / "owner_problems.py").is_file()
