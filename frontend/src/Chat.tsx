@@ -23,6 +23,7 @@ import { FinishedAd, FinishedAdTop } from "./FinishedAd";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
+import { Working } from "./Working";
 import { useSceneWork, type WatchClip } from "./sceneWork";
 import { ATTACHMENT_TYPES, pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
@@ -253,6 +254,13 @@ export function Chat({
     sessionId !== null &&
     !paused &&
     ((producerHasTheFloor && !waitingOnOwner) || cards.some((card) => card.making !== null));
+  // The agent's turn runs while it has yet to answer the owner, or while a scene is still being
+  // made after it has; it is timed from the owner's last message.
+  const agentWorking =
+    (producerHasTheFloor && !waitingOnOwner) ||
+    (sessionId !== null && !paused && cards.some((card) => card.making !== null));
+  const turnStarted =
+    [...messages].reverse().find((message) => message.role === "user")?.created_at ?? null;
   const pasted = lastPastedPage(messages);
   const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
   // Only the newest finished ad lists its scenes to fix; older ones are plain players.
@@ -412,16 +420,7 @@ export function Chat({
                   Waiting for your answer
                 </div>
               )}
-              {producerHasTheFloor && !waitingOnOwner && (
-                <div className="working" aria-live="polite">
-                  <span className="dots">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  The agent is working
-                </div>
-              )}
+              {agentWorking && <Working cards={cards} since={turnStarted} />}
             </div>
           </div>
 

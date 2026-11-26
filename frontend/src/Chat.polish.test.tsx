@@ -122,8 +122,79 @@ test("the producer is said to be working while it makes what the owner asked for
     said("notice", "Making scene 1's starting picture.", { step: started(1) }),
   ]);
 
-  expect(screen.getByText("The agent is working")).toBeTruthy();
+  expect(screen.getByText("Making scene pictures · 0 of 1 done")).toBeTruthy();
   expect(screen.queryByText("Waiting for your answer")).toBeNull();
+});
+
+test("before any scene is made, the agent's bubble says it is working, with its dots", async () => {
+  await session([said("user", "https://shop.example/shoes")]);
+
+  const working = screen.getByRole("group", { name: "The agent's turn" });
+  expect(within(working).getByText("Agent")).toBeTruthy();
+  expect(within(working).getByText("The agent is working")).toBeTruthy();
+  expect(working.querySelectorAll(".dots i")).toHaveLength(3);
+});
+
+test("while pictures are made, the agent's bubble counts the scenes done", async () => {
+  await session([
+    said("user", "https://shop.example/shoes"),
+    said("notice", "Making scene 1's starting picture.", { step: started(1) }),
+    said("notice", "Making scene 2's starting picture.", { step: started(2) }),
+    said("agent", "", {
+      attachments: [file("picture", "/media/s2.png", 2)],
+      step: made(2, "starting_picture"),
+    }),
+  ]);
+
+  expect(screen.getByText("Making scene pictures · 1 of 2 done")).toBeTruthy();
+});
+
+test("while clips are made, the agent's bubble counts the clips done", async () => {
+  await session([
+    said("user", "https://shop.example/shoes"),
+    said("agent", "", {
+      attachments: [file("picture", "/media/s1.png", 1)],
+      step: made(1, "starting_picture"),
+    }),
+    said("agent", "", {
+      attachments: [file("picture", "/media/s2.png", 2)],
+      step: made(2, "starting_picture"),
+    }),
+    said("notice", "Making scene 1's clip.", { step: started(1, "clip") }),
+    said("notice", "Making scene 2's clip.", { step: started(2, "clip") }),
+  ]);
+
+  expect(screen.getByText("Making scene clips · 0 of 2 done")).toBeTruthy();
+});
+
+test("after the agent answers, its bubble stays while a scene is still being made", async () => {
+  await session([
+    said("user", "https://shop.example/shoes"),
+    said("notice", "Making scene 1's clip.", { step: started(1, "clip") }),
+    said("agent", "Your clips are on their way."),
+  ]);
+
+  expect(screen.getByText("Making scene clips · 0 of 1 done")).toBeTruthy();
+});
+
+test("the agent's bubble shows how long this turn has run, counting up", async () => {
+  const sentAt = new Date(Date.now() - 74_000).toISOString();
+  await session([said("user", "https://shop.example/shoes", { created_at: sentAt })]);
+
+  const clock = screen.getByRole("timer");
+  expect(clock.textContent).toMatch(/^1:1[45]$/);
+  const first = clock.textContent;
+  await waitFor(() => expect(screen.getByRole("timer").textContent).not.toBe(first), {
+    timeout: 2500,
+  });
+});
+
+test("once the agent has answered and nothing is being made, its bubble goes", async () => {
+  await session([said("user", "Hi"), said("agent", "Hello! Send me a product link.")]);
+  await screen.findByText("Hello! Send me a product link.");
+
+  expect(screen.queryByRole("timer")).toBeNull();
+  expect(screen.queryByText("The agent is working")).toBeNull();
 });
 
 test("the finished ad stands out as the owner's ad, ready to download", async () => {
@@ -226,7 +297,7 @@ test("a suggested note while another scene is still being made keeps the produce
     }),
   ]);
 
-  expect(screen.getByText("The agent is working")).toBeTruthy();
+  expect(screen.getByText("Making scene clips · 0 of 1 done")).toBeTruthy();
   expect(screen.queryByText("Waiting for your answer")).toBeNull();
 });
 
