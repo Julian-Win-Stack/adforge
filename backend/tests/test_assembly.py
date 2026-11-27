@@ -661,3 +661,94 @@ def test_a_gif_or_see_through_photo_is_drawn_flat_on_white(format: str, tmp_path
 def test_a_file_that_isnt_a_picture_cant_go_on_the_end_card() -> None:
     with pytest.raises(ValueError, match="can't be read as a picture"):
         assembly.flat_photo(b"not a picture")
+
+
+def caption(start: float, end: float) -> assembly.Caption:
+    return assembly.Caption("words", start, end)
+
+
+def test_the_voice_is_heard_where_its_words_are_timed_and_short_pauses_join_its_parts() -> None:
+    cuts = [
+        a_cut(1, picture=(0, 5, 0, 5)),
+        a_cut(2, picture=(0, 4, 5, 9)),
+        a_cut(3, picture=(0, 3, 9, 12)),
+        a_cut(4, picture=(0, 2, 12, 14)),
+    ]
+    drawn = [
+        caption(0.1, 1.5),
+        # A breath between two groups of words: too short for the music to rise.
+        caption(1.5 + assembly.MUSIC_RISES_AFTER_SECONDS - 0.1, 4.2),
+        # A real pause between scenes.
+        caption(5.8, 8.4),
+    ]
+
+    # Scene 3 has sound but no timed words, so all of it may be voice; scene 4 is silent.
+    speech = assembly.speech_times(cuts, drawn, sounded=[True, True, True, False])
+
+    assert speech == [(0.1, 4.2), (5.8, 8.4), (9, 12)]
+
+
+def test_the_music_rises_where_no_one_talks_and_dips_under_the_voice(tmp_path: Path) -> None:
+    parts = [
+        (clip(tmp_path, "scene-1", seconds=4), a_cut(1, picture=(0, 4, 0, 4))),
+        (clip(tmp_path, "scene-2", seconds=4), a_cut(2, picture=(0, 4, 4, 8))),
+    ]
+    card = a_card(start=8.0)
+    ad = tmp_path / "ad.mp4"
+    tune = music(tmp_path, seconds=8 + END_CARD_SECONDS)
+
+    assembly.join(
+        parts,
+        ad,
+        music=tune,
+        drawn=[
+            caption(0.0, 1.5),
+            # A breath shorter than the music waits for.
+            caption(1.8, 3.0),
+            # A pause of 2 s between the lines, across the cut between the scenes.
+            caption(5.0, 7.9),
+        ],
+        end_card=card,
+    )
+
+    heard = ad.read_bytes()
+    alone = loudness(tune.read_bytes(), "music", between=(1, 2))
+    under = loudness(heard, "music", between=(0.5, 1.4))
+    # Under the voice, the music plays a fifth as loud as it is, as it always has: 14 dB down.
+    assert under == pytest.approx(alone - 14, abs=1)
+    # Through the breath it stays down.
+    assert loudness(heard, "music", between=(1.55, 1.75)) == pytest.approx(under, abs=1.5)
+    # In the pause and on the end card it rises to near full: 0.9 of itself, 1 dB down.
+    rise = loudness(heard, "music", between=(3.8, 4.4))
+    assert rise == pytest.approx(alone - 1, abs=1)
+    assert loudness(heard, "music", between=(8.8, 8 + END_CARD_SECONDS - 0.2)) == pytest.approx(
+        alone - 1, abs=1
+    )
+    # It swells and dips smoothly, never at once: partway between the two halfway through.
+    swelling = loudness(heard, "music", between=(3.1, 3.3))
+    assert under + 4 < swelling < rise - 3
+    dipping = loudness(heard, "music", between=(4.88, 4.96))
+    assert under + 3 < dipping < rise - 3
+    # The voice is as loud as in its clip, and the ad as long as its picture.
+    assert loudness(heard, "voice", between=(5.5, 7.5)) == pytest.approx(
+        loudness(parts[0][0].read_bytes(), "voice", between=(1, 3)), abs=0.5
+    )
+    assert stream_seconds(ad, "a") == pytest.approx(8 + END_CARD_SECONDS, abs=0.05)
+    assert stream_seconds(ad, "v") == pytest.approx(8 + END_CARD_SECONDS, abs=0.05)
+
+
+def test_an_ad_no_one_talks_in_plays_its_music_near_full_throughout(tmp_path: Path) -> None:
+    silent = generate(tmp_path / "scene-1.mp4", "color=c=red:s=72x128:r=25", seconds=3)
+    ad = tmp_path / "ad.mp4"
+    # In stereo, as the ad's silence is: mono music would be spread over its two channels.
+    tune = generate(
+        tmp_path / "music.wav",
+        f"sine=frequency={MUSIC_HERTZ}:sample_rate=8000,aformat=channel_layouts=stereo",
+        seconds=3,
+    )
+
+    assembly.join([(silent, one_scene(3.0))], ad, music=tune, drawn=[])
+
+    assert loudness(ad.read_bytes(), "music", between=(0.2, 2.8)) == pytest.approx(
+        loudness(tune.read_bytes(), "music", between=(0.2, 2.8)) - 1, abs=1
+    )
