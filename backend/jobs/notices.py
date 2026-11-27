@@ -220,6 +220,8 @@ VOICE_FREED = _developer("voice_freed")
 PLAN_CARD_LOCKED = _developer("plan_card_locked")
 # The producer's show_plan_card call couldn't make a card that can be shown (#777).
 PLAN_CARD_INVALID = _developer("plan_card_invalid")
+# A run with nobody watching (an eval or an ad-run script) got no plan card to answer (#782).
+NO_PLAN_CARD = _developer("no_plan_card")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 

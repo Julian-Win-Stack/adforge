@@ -12,6 +12,10 @@ Evals are built so Julian can keep extending the project and make the agent bett
 - **Tests the failure, not the rule, at the earliest step where it shows.** A case asks "did the failure that rule A prevents come back?", never "did the AI follow rule A?". A made-up claim is tested on the script; a side flip only shows in the clip, so it's tested there.
 - **Comes in two kinds:** regression (what works keeps working, run on every change) and capability (hard cases the agent fails today: the to-do list).
 
+## The plan card
+
+Every ad now waits on its plan card (spec #768). Evals that start from a link answer it the way a shop owner pressing "Use the agent's picks" would, through the chat's own answer: the regression runner (which also pins the person-talking style, and takes `--plan N`; see `regression/README.md`) and `owner_notes/chat.py:make_first_version`. Tests about something else run with the lock off (`PLAN_CARD_LOCK`); mark a test `plan_card` to run it on.
+
 ## Cases
 
 One file per question: `cases/<question>.jsonl`, one case per line. A question is one yes/no a check answers, for example `fact_check` ("does the plan claim something the product page doesn't back?"). A case is one thing Julian graded:

@@ -72,6 +72,14 @@ pages and sources) and start nothing on any problem. A case that stops for a set
 reason mid-run prints `STOP: <case>: <reason>`, appends it to `runs/<run>/STOP`, and
 no new case starts.
 
+The plan card (spec #768): each run's first message is the scenario's link plus
+"Make it a person talking ad.", so all 3 plans are person talking and the baseline
+compares like with like. The run answers the card itself, as a shop owner pressing
+"Use the agent's picks" would, through the chat's own answer, and prints
+`plan card: <the 3 plans>; answered: ...`. `run --plan 2` picks the second plan
+instead. A producer that stops after the page with no card stops the case with a
+`no_plan_card` developer notice and a `STOP:` line.
+
 Importing grades also updates shared photo labels. The second, free `answer`
 applies those labels to answers that initially said `needs_label`, before filing,
 comparison and promotion. Only Julian grades pictures and ads. A first complete,

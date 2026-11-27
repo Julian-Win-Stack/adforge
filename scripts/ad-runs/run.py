@@ -17,6 +17,11 @@
 - Writes <run-dir>/ads.json (key -> session id) and run.json as it goes. Safe to stop and rerun:
   an ad already in ads.json is not started twice. Ends when every started ad has a finished ad
   or is listed in <run-dir>/skip.txt (one key per line: an ad that stopped for good).
+- Plan card: each ad waits on its plan card after the page is read. The script answers it the
+  way a shop owner pressing "Use the agent's picks" would (or picks plan --plan N), prints
+  "CARD <key>: <the 3 plans>; answered: <what>" and keeps the card in run.json. An ad with no
+  card --card-wait minutes after it started (and no plan) prints "STOP: <key>: no plan card",
+  records a developer notice (no_plan_card) and starts no new ad.
 - Before starting: refuses (exit 1, nothing started) when the API is down, a key the ads need
   is unset, or (on a fresh run) other ads are being made. Mid-run, a call refused for a setup
   reason (no key, wrong key, no money) prints "STOP: <key>: <reason>", appends it to
@@ -31,6 +36,8 @@ ap.add_argument("run_dir"); ap.add_argument("--name", required=True)
 ap.add_argument("--pause-at", type=float, required=True, help="dollars: pause every ad here")
 ap.add_argument("--ad-hold", type=float, default=25.0, help="dollars: pause one ad past this")
 ap.add_argument("--only"); ap.add_argument("--stagger", type=int, default=20)
+ap.add_argument("--plan", type=int, choices=[1, 2, 3], help="answer each plan card with this plan, not the agent's picks")
+ap.add_argument("--card-wait", type=float, default=15.0, help="minutes: stop an ad with no plan card by then")
 a = ap.parse_args()
 R = a.run_dir
 PAUSE_AT, AD_HOLD = a.pause_at, a.ad_hold
@@ -76,6 +83,38 @@ def finished():
     code = ("from jobs.models import ProducedItem as P\n"
             "for s in set(P.objects.filter(kind=P.Kind.FINISHED_AD).values_list('job__session_id', flat=True)): print('DONEID', s)")
     return {l.split()[1] for l in shell(code).splitlines() if l.startswith("DONEID")}
+
+
+def answer_card(k, sid):
+    """Answer the ad's open plan card, if it has one; gives what was printed, or None."""
+    msgs = req("GET", f"/sessions/{sid}/messages/")
+    answered = {m.get("answers_plan_card") for m in msgs}
+    cards = [m["plan_card"] for m in msgs if m.get("plan_card")]
+    if not cards or cards[-1]["state"] != "open" or cards[-1]["id"] in answered:
+        return None
+    card = cards[-1]
+    plans = next(q for q in card["questions"] if q["key"] == "plan")["choices"]
+    sent = {"use_picks": True} if a.plan is None else {"choices": {"plan": a.plan - 1}}
+    req("POST", f"/sessions/{sid}/plan-cards/{card['id']}/answer/", sent)
+    titles = ", ".join(f"{n}. {p['title']} ({p['style']}, {p['seconds']} s)" for n, p in enumerate(plans, 1))
+    return f"CARD {k}: {titles}; answered: " + ("the agent's picks" if a.plan is None else f"plan {a.plan}")
+
+
+def planned_or_carded(sid):
+    """Whether the ad got a plan card or has a plan already."""
+    msgs = req("GET", f"/sessions/{sid}/messages/")
+    if any(m.get("plan_card") for m in msgs):
+        return True
+    code = ("from jobs.models import Job\n"
+            f"j = Job.objects.filter(session_id='{sid}').first()\n"
+            "print('HASPLAN', bool(j and (j.chosen_plan is not None or j.scenes.exists())))")
+    return "HASPLAN True" in shell(code)
+
+
+def no_card_notice(sid, text):
+    code = ("from chat.models import Message, Session\nfrom jobs import notices\n"
+            f"notices.record(Session.objects.get(pk='{sid}'), notices.NO_PLAN_CARD, {text!r}, Message.Level.PROBLEM)")
+    shell(code)
 
 
 def preflight(fresh):
@@ -145,6 +184,25 @@ while True:
                 json.dump(run, open(run_p, "w"), indent=1)
                 print(f"{now()} HELD {k}: ${costs[ads[k]]:.2f} on this ad > ${AD_HOLD:.0f}; paused. Tell Julian.", flush=True)
         live = [k for k in live if k not in held]
+        cards, starts = run.setdefault("cards", {}), run.setdefault("started_at", {})
+        for k in live:
+            if k in cards or k in stopped:
+                continue
+            said = answer_card(k, ads[k])
+            if said:
+                cards[k] = said; json.dump(run, open(run_p, "w"), indent=1)
+                print(f"{now()} {said}", flush=True)
+                continue
+            began = datetime.datetime.fromisoformat(starts.get(k, run["started"]).replace("Z", "+00:00"))
+            waited = (datetime.datetime.now(datetime.timezone.utc) - began).total_seconds() / 60
+            if waited > a.card_wait and not planned_or_carded(ads[k]):
+                why = f"no plan card {waited:.0f} minutes after the link was sent"
+                no_card_notice(ads[k], f"The ad-run script got {why}, so it stopped waiting.")
+                stopped.add(k); run["stopped"] = sorted(stopped); json.dump(run, open(run_p, "w"), indent=1)
+                with open(os.path.join(R, "STOP"), "a") as f:
+                    f.write(f"STOP: {k}: no plan card\n")
+                print(f"{now()} STOP: {k}: {why} (no new ad starts). Tell Julian.", flush=True)
+                todo = []
         for k in live:  # the first message names a session; put the run's name on it
             s = req("GET", f"/sessions/{ads[k]}/")
             if not (s.get("name") or "").startswith(f"{a.name} "):
@@ -160,6 +218,7 @@ while True:
             sid = req("POST", "/sessions/", {})["id"]
             req("POST", f"/sessions/{sid}/messages/", {"text": l["url"]})
             ads[l["key"]] = sid; json.dump(ads, open(ads_p, "w"), indent=1)
+            run.setdefault("started_at", {})[l["key"]] = now(); json.dump(run, open(run_p, "w"), indent=1)
             print(f"{now()} STARTED {l['key']} {sid} (live {len(live)+1}, left {len(todo)-1}, spent ${cost:.2f})", flush=True)
             time.sleep(a.stagger); continue
         print(f"{now()} live {len(live)}, done {len(done & set(ads.values()))}, spent ${cost:.2f}", flush=True)

@@ -10,6 +10,7 @@ Run a batch of real ads on the Azure VM, from the VM (they call `http://127.0.0.
 | Script | What it does |
 |---|---|
 | `python3 run.py <run-dir> --name R8 --pause-at 235` | Starts every ad 20 s apart, names sessions "R8 <key>", pauses all ads at the budget and one ad past `--ad-hold` ($25). Refuses to start on a down API, unset key or busy app; a setup refusal mid-run prints `STOP:`, appends to `<run-dir>/STOP` and starts no new ad |
+| (in `run.py`) | Answers each ad's plan card with the agent's picks (`--plan N` picks plan N), printing `CARD <key>: ...`. An ad with no card `--card-wait` minutes (15) after its link prints `STOP: <key>: no plan card`, records a `no_plan_card` notice and starts no new ad |
 | `python3 watch.py <run-dir>` | Prints RED on a red notice and QUIET when an ad waits on the owner or stalls |
 | `python3 status.py <run-dir> [full]` | Last message of each ad |
 | `python3 answer.py <run-dir> <key> "<text>"` | Answers as the shop owner; logs to `owner-answers-live.log` |

@@ -11,7 +11,7 @@ from django.db import connection
 
 from evals.regression.budget import SpendLedger
 from evals.regression.database import isolated_database, url_for_database
-from evals.regression.runner import run, run_scenario
+from evals.regression.runner import STYLE_PIN, run, run_scenario
 from evals.regression.scenarios import Scenario
 from evals.regression.store import Store, read_json
 from gateway import fake
@@ -359,7 +359,7 @@ def test_a_producer_question_is_saved_without_an_invented_owner_reply(
         Message.objects.filter(session_id=result.session_id, role=Message.Role.USER).values_list(
             "text", flat=True
         )
-    ) == [scenario.first_message]
+    ) == [f"{scenario.first_message}\n{STYLE_PIN}"]
     assert "No saved answer" not in result.reason
 
 

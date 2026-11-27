@@ -94,7 +94,7 @@ class ShowPlanCard(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = call.session.jobs.first()
-        if job is None or not _page_read(job):
+        if job is None or not page_read(job):
             raise Refused("the product page hasn't been read yet, and the plans are made from it.")
         if job.chosen_plan is not None or job.scenes.exists():
             raise Refused("the plan card was already answered, and the ad is planned from it.")
@@ -177,7 +177,7 @@ def _asked(key: str, question: Question) -> dict[str, object]:
     }
 
 
-def _page_read(job: Job) -> bool:
+def page_read(job: Job) -> bool:
     """Whether the job's page was read: found to show its product, with a product photo."""
     return bool(job.page_html_key) and job.photos.filter(from_video=None).exists()
 
@@ -225,7 +225,7 @@ def hold(call: ToolCall) -> None:
     if not settings.PLAN_CARD_LOCK:
         return
     job = call.session.jobs.first()
-    if job is None or not _page_read(job) or job.chosen_plan is not None or job.scenes.exists():
+    if job is None or not page_read(job) or job.chosen_plan is not None or job.scenes.exists():
         return
     notices.record(
         call.session,
