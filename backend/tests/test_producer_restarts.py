@@ -241,7 +241,7 @@ def test_a_page_the_worker_stopped_keeping_the_photos_of_is_read_again_without_p
         (1, MUG_FRONT),
         (2, MUG_SIDE),
     ]
-    assert ToolCall.objects.get(tool="read_page").result.endswith("Kept 2 product photos.")
+    assert results_of("read_page")[-1].endswith("Kept 2 product photos.")
     assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")
 
 

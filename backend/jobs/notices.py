@@ -126,6 +126,9 @@ SAME_PICTURE_FILMED_AGAIN = _developer("same_picture_filmed_again")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")
 STARTING_PICTURE_LOGO = _developer("starting_picture_logo")
 PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
+# A product photo the producer couldn't be shown once the page was read (#769): it plans
+# without seeing that one.
+PRODUCER_PHOTO_NOT_LOADED = _developer("producer_photo_not_loaded")
 PHOTO_PICKER = _developer("photo_picker")
 # A kept page photo still tiny after asking the shop for its full size.
 TINY_PAGE_PHOTO = _developer("tiny_page_photo")

@@ -12,6 +12,7 @@ from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
+from agents import page_for_producer
 from agents.loop import SYSTEM_NOTE
 from agents.models import SystemNote, ToolCall
 from agents.tasks import FILTER_KEPT_STOPPING, FILTER_RETRY_NOTE
@@ -41,6 +42,14 @@ def no_nudges(settings: Settings) -> None:
     """Only the filter's retries: a test of them, asked before the page is read, scripts no
     turn for a nudge."""
     settings.PRODUCER_MOST_NUDGES = 0
+
+
+@pytest.fixture
+def no_photos_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The producer is shown no product photo with the page, so these tests see the filter's
+    retries of its turn: with photos in its conversation, a refused turn is first taken again
+    without them (tests/test_producer_sees_the_page.py)."""
+    monkeypatch.setattr(page_for_producer, "MOST_PHOTOS", 0)
 
 
 def _planned(producer: ScriptedProducer, product_page_url: str, *after: Any) -> None:
@@ -216,6 +225,7 @@ def test_no_nudge_while_the_shop_owner_paused(
 
 def test_a_turn_the_filter_stopped_is_taken_again_and_the_ad_carries_on_unseen(
     no_nudges: None,
+    no_photos_shown: None,
     producer: ScriptedProducer,
     page_read: str,
     api: APIClient,
@@ -238,7 +248,10 @@ def test_a_turn_the_filter_stopped_is_taken_again_and_the_ad_carries_on_unseen(
 
 
 def test_the_second_retry_adds_a_note_to_carry_on(
-    no_nudges: None, producer: ScriptedProducer, page_read: str
+    no_nudges: None,
+    no_photos_shown: None,
+    producer: ScriptedProducer,
+    page_read: str,
 ) -> None:
     producer.told("Carry on", REFUSED, REFUSED, "Carrying on.")
 
@@ -247,7 +260,12 @@ def test_the_second_retry_adds_a_note_to_carry_on(
 
 
 def test_after_two_retries_the_owner_is_told_plainly_never_to_start_a_new_session(
-    no_nudges: None, producer: ScriptedProducer, page_read: str, api: APIClient, session_id: str
+    no_nudges: None,
+    no_photos_shown: None,
+    producer: ScriptedProducer,
+    page_read: str,
+    api: APIClient,
+    session_id: str,
 ) -> None:
     producer.expect_stop()
 
@@ -260,7 +278,10 @@ def test_after_two_retries_the_owner_is_told_plainly_never_to_start_a_new_sessio
 
 
 def test_each_stop_of_the_filter_gets_its_own_retries(
-    no_nudges: None, producer: ScriptedProducer, page_read: str
+    no_nudges: None,
+    no_photos_shown: None,
+    producer: ScriptedProducer,
+    page_read: str,
 ) -> None:
     # Refused, taken again and carried on; later refused twice more, and still carried on.
     producer.told(

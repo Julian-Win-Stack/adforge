@@ -6,6 +6,7 @@ import io
 import json
 from collections.abc import Callable
 from decimal import Decimal
+from unittest.mock import ANY
 
 import PIL.Image
 import pytest
@@ -98,6 +99,11 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
         # As the producer made the call, its why too.
         "arguments": {"link": product_page_url, "target_seconds": 15, "why": DEFAULT_WHY},
         "result": checkpoint.result,
+        # The product photos, labelled by library number (ADR 0016).
+        "pictures": [
+            {"label": f"Library item {item.number}", "key": item.file}
+            for item in job.library.order_by("number")
+        ],
     }
 
 
@@ -286,6 +292,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert list(tools) == [
         "read_page",
         "use_photos",
+        "see_page",
         "add_to_library",
         "cant_use_owner_files",
         "show_plan_card",
@@ -332,8 +339,12 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
             "name": "read_page",
             "arguments": json.dumps(sent),
         },
-        {"type": "function_call_output", "call_id": "call_a1", "output": checkpoint.result},
+        {"type": "function_call_output", "call_id": "call_a1", "output": ANY},
     ]
+    # The tool's words, then the product photos as pictures (ADR 0016).
+    output = second["input"][3]["output"]
+    assert output[0] == {"type": "input_text", "text": checkpoint.result}
+    assert [part["type"] for part in output[1:]].count("input_image") == 2
     turns = ModelCall.objects.filter(purpose="produce")
     assert [(turn.provider, turn.outcome, turn.tool_call) for turn in turns] == [
         ("openai", "succeeded", None),

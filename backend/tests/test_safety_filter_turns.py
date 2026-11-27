@@ -197,7 +197,7 @@ def test_a_turn_refused_over_pictures_looked_at_before_is_taken_once_more_withou
     ]
     assert red_notices(session, sentry_events) == [
         f"The AI model's safety filter refused to look at {BOTH[0]} and {BOTH[1]}, so the "
-        "work on your ad carried on without them."
+        f"work on your ad carried on without them. {loop.GIVEN_AGAIN}"
     ]
 
 

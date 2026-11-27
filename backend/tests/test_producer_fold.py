@@ -300,7 +300,9 @@ def test_a_folded_calls_whole_answer_is_read_again_by_its_call_id(
         if each.get("tool") == "read_page"
     ]
     assert folded.call_id in read["result"]
-    assert results_of("read_earlier_call") == [f"Your read_page call answered:\n{folded.result}"]
+    assert ToolCall.objects.get(tool="read_earlier_call").result == (
+        f"Your read_page call answered:\n{folded.result}"
+    )
 
 
 def test_the_snapshot_reaches_the_model_last_after_the_conversation(

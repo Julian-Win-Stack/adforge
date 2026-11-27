@@ -1,4 +1,4 @@
-"""The plan card (spec #768, ADR 0016): after the page is read the producer shows the shop
+"""The plan card (spec #768, ADR 0017): after the page is read the producer shows the shop
 owner 1 to 3 questions, one of them always which of 3 plans, and nothing is made until the
 newest card of the job is answered. Code holds that lock, not the producer's instructions:
 every tool that plans scenes, makes a person, a picture or music, starts a scene agent or

@@ -114,7 +114,7 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
         "arguments": {"link": page_read, "target_seconds": None},
         "why": DEFAULT_WHY,
     }
-    assert read_page.value("output") == {"result": results_of("read_page")[0]}
+    assert read_page.value("output") == {"result": ToolCall.objects.get(tool="read_page").result}
     (check_page,) = trace.find(name="check_page")
     recorded = ModelCall.objects.get(purpose="check_page")
     assert check_page.attributes["langfuse.observation.model.name"] == "gpt-5-mini"

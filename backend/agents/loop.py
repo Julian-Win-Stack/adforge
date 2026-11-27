@@ -244,6 +244,9 @@ class Agent:
     # Whether a model whose paid answer breaks a rule of its output, inside one of its tool
     # calls, is told why and asked again (spec #247 point 8): the producer's are.
     asks_again: bool = False
+    # Whether a picture given in more than one tool's answer is shown only with the newest:
+    # the producer's are, as the page's photos come with every answer that shows the page.
+    shows_each_picture_once: bool = False
     # What it is given last on every turn, rebuilt from the database each time: the
     # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
     snapshot: Callable[[Session], str] | None = None
@@ -332,6 +335,8 @@ def _work(agent: Agent, session: Session) -> int:
         # Built with it, so what it says has the conversation's steps.
         snapshot = agent.snapshot(session) if agent.snapshot else ""
         conversation = without_refused_pictures(session, agent.purpose, conversation)
+        if agent.shows_each_picture_once:
+            conversation = each_picture_once(conversation)
         if _nothing_to_answer_since_its_last_turn(agent, session, conversation):
             # Its last turn was given all of them, before a worker stopped past its reply.
             _read(steps, notes)
@@ -478,21 +483,41 @@ def take_a_turn(
         # it was the turn the model wrote that was refused, not a picture.
         if refused.of_what_was_made or not any(image.key in looked_at() for image in shown):
             raise
-        turn, left_out = ask([]), shown
+        # The refusal named no picture: it may be the words, so the pictures are left out of
+        # this turn only, and the next turn is given them again.
+        turn = ask([])
+        post_notice_or_record(
+            session,
+            job,
+            notices.LEFT_OUT_BY_THE_FILTER,
+            f"{left_out_by_the_filter([image.label for image in shown], done)} {GIVEN_AGAIN}",
+        )
+        return turn
     if left_out:
         with transaction.atomic():
             RefusedPicture.objects.bulk_create(
                 RefusedPicture(session=session, purpose=purpose, label=image.label, key=image.key)
                 for image in left_out
             )
-            notice = left_out_by_the_filter([image.label for image in left_out], done)
-            if job is not None:
-                post_notice(job, notices.LEFT_OUT_BY_THE_FILTER, notice, Message.Level.PROBLEM)
-            else:
-                notices.record(
-                    session, notices.LEFT_OUT_BY_THE_FILTER, notice, Message.Level.PROBLEM
-                )
+            post_notice_or_record(
+                session,
+                job,
+                notices.LEFT_OUT_BY_THE_FILTER,
+                left_out_by_the_filter([image.label for image in left_out], done),
+            )
     return turn
+
+
+# What the notice of a refusal that named no picture adds: the pictures come back next turn.
+GIVEN_AGAIN = "They are given again on the next turn."
+
+
+def post_notice_or_record(session: Session, job: Job | None, kind: notices.Kind, text: str) -> None:
+    """Post a problem notice for `job`, or record it for the session when it has no job yet."""
+    if job is not None:
+        post_notice(job, kind, text, Message.Level.PROBLEM)
+    else:
+        notices.record(session, kind, text, Message.Level.PROBLEM)
 
 
 def without_refused_pictures(
@@ -507,6 +532,27 @@ def without_refused_pictures(
         ).values_list("label", "key")
     ]
     return _leaving_out(conversation, refused)
+
+
+# What an answer whose pictures come again later says in their place.
+SHOWN_AGAIN_LATER = "Its pictures are shown again with a later answer."
+
+
+def each_picture_once(conversation: Sequence[Happened]) -> list[Happened]:
+    """The conversation with each picture, by its file, shown only with the newest tool answer
+    that gives it: an older answer says its pictures come again later."""
+    seen: set[str] = set()
+    kept: list[Happened] = []
+    for each in reversed(conversation):
+        if isinstance(each, ToolUse) and each.pictures:
+            new = [picture for picture in each.pictures if picture.key not in seen]
+            seen.update(picture.key for picture in each.pictures)
+            if len(new) != len(each.pictures):
+                each = each.model_copy(
+                    update={"pictures": new, "result": f"{each.result}\n{SHOWN_AGAIN_LATER}"}
+                )
+        kept.append(each)
+    return kept[::-1]
 
 
 def _leaving_out(conversation: Sequence[Happened], left_out: Sequence[Image]) -> list[Happened]:
