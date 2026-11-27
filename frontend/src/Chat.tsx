@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   ApiError,
+  answerPlanCard,
   getMessagesSince,
   sendMessage,
   pauseSession,
@@ -16,10 +17,13 @@ import {
   type Message,
   type MessageTries,
   type OwnerCheck,
+  type PlanCard,
+  type PlanCardAnswer,
   type SendAs,
   type Sent,
 } from "./api";
 import { FinishedAd, FinishedAdTop } from "./FinishedAd";
+import { PlanCardView } from "./PlanCard";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
@@ -214,7 +218,16 @@ export function Chat({
     onSent(sent);
   }
 
+  /** Answers a plan card, and shows the owner's message saying what was chosen at once. */
+  async function answerCard(card: number, answer: PlanCardAnswer) {
+    const sent = await answerPlanCard(sessionId as string, card, answer);
+    setPaused(sent.session.paused ?? false);
+    show([sent.message], false);
+    pollNow.current();
+  }
+
   const empty = sessionId === null && messages.length === 0;
+  const cardStates = planCardStates(messages);
   // A notice posted while the producer works doesn't mean it has answered, nor does a scene's
   // picture or clip shown as it is made: look past them.
   const lastSaid = [...messages]
@@ -247,7 +260,8 @@ export function Chat({
   // A suggested note is a question to the owner: nothing runs until they answer, though their
   // last words are still the newest; a scene still being made means the run goes on.
   const waitingOnOwner =
-    suggestedNotes(messages).size > 0 && !cards.some((card) => card.making !== null);
+    (suggestedNotes(messages).size > 0 && !cards.some((card) => card.making !== null)) ||
+    [...cardStates.values()].includes("open");
   const pageAsk = pagePanel(messages);
   // Something to pause: the producer working, or a scene's picture or clip being made.
   const pausable =
@@ -407,6 +421,14 @@ export function Chat({
                                 attachmentView(message, attachment, index),
                               )}
                             </div>
+                          )}
+                          {message.plan_card && (
+                            <PlanCardView
+                              card={message.plan_card}
+                              state={cardStates.get(message.plan_card.id) ?? "open"}
+                              answer={message.plan_card.answer}
+                              onAnswer={(answer) => answerCard(message.plan_card!.id, answer)}
+                            />
                           )}
                         </>
                       )}
@@ -610,6 +632,24 @@ function joinStarts(messages: Message[]): Message[] {
 function sceneList(scenes: number[]) {
   const run = scenes.every((scene, i) => i === 0 || scene === scenes[i - 1] + 1);
   return run ? `${scenes[0]}-${scenes[scenes.length - 1]}` : scenes.join(", ");
+}
+
+/** How each plan card stands, by its id, from the whole chat rather than from when its
+ * message was read: answered once the owner's answer to it is in the chat, replaced once a
+ * newer card is, open otherwise. */
+export function planCardStates(messages: Message[]): Map<number, PlanCard["state"]> {
+  const answered = new Set(messages.map((message) => message.answers_plan_card).filter(Boolean));
+  const cards = messages.flatMap((message) => (message.plan_card ? [message.plan_card] : []));
+  return new Map(
+    cards.map((card, index) => [
+      card.id,
+      answered.has(card.id) || card.state === "answered"
+        ? "answered"
+        : index < cards.length - 1 || card.state === "replaced"
+          ? "replaced"
+          : "open",
+    ]),
+  );
 }
 
 /** Whether the chat shows a message. A notice with no words and nothing carried only tells a

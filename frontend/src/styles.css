@@ -938,6 +938,195 @@ button:disabled {
   color: var(--accent-2);
 }
 
+/* The plan card: the agent's 3 plans and its other questions, answered before anything is
+   made. Raised a step above the chat, like the scene cards. */
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  padding: 18px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+.plan-card.replaced {
+  opacity: 0.55;
+}
+
+.plan-card-opening {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.plan-card-question {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.plan-card-question legend {
+  padding: 0;
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.plan-card-plans {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plan-card-plan,
+.plan-card-chip {
+  position: relative;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plan-card-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.plan-card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.plan-card input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.plan-card-plan:has(input:checked),
+.plan-card-chip:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-card-plan:has(input:focus-visible),
+.plan-card-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.plan-card-question:disabled .plan-card-plan,
+.plan-card-question:disabled .plan-card-chip {
+  cursor: default;
+}
+
+.plan-card-plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-card-style {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+
+.plan-card-pick {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.plan-card-plan b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.plan-card-line {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.plan-card-longer {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+
+.plan-card-problem {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--danger);
+}
+
+.plan-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.plan-card-buttons button {
+  font: inherit;
+  font-weight: 600;
+  padding: 11px 16px;
+  border-radius: var(--radius-m);
+  border: 1.5px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plan-card-buttons button.go {
+  flex: 1;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.plan-card-buttons button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.plan-card-state {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
 .attachments {
   display: flex;
   flex-wrap: wrap;

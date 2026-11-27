@@ -148,7 +148,42 @@ export type Message = {
   /** True on code's notice that a pasted page was kept with too few photos: the page panel
    * stays open for more photos until the shop owner answers. */
   wants_more_photos?: boolean;
+  /** The plan card the producer's message shows (backend agents/plan_card.py:shown), as it
+   * stood when the message was read; null on any other message. */
+  plan_card?: PlanCard | null;
+  /** On the shop owner's answer to a plan card: the card's id. */
+  answers_plan_card?: number | null;
 };
+
+/** One plan on a plan card: its style as the shop owner reads it ("Person talking" or
+ * "Product shots"), its length, title, what it is built on and how it opens. */
+export type CardPlan = {
+  style: string;
+  seconds: number;
+  title: string;
+  built_on: string;
+  opens: string;
+};
+
+/** One question on a plan card, by key ("plan", "product_option", "other"): its choices and
+ * the agent's pick, an index from 0. The plans question's choices are plans. */
+export type CardQuestion =
+  | { key: "plan"; asks: string; choices: CardPlan[]; pick: number }
+  | { key: "product_option" | "other"; asks: string; choices: string[]; pick: number };
+
+/** The card the producer shows once the page is read: nothing is made until it is answered.
+ * `answer` holds the index chosen in each question, by key, once it is answered. */
+export type PlanCard = {
+  id: number;
+  opening: string;
+  questions: CardQuestion[];
+  longer: string;
+  state: "open" | "answered" | "replaced";
+  answer: Record<string, number> | null;
+};
+
+/** What the plan card sends: every pick at once, or the choice in each question by key. */
+export type PlanCardAnswer = { use_picks: true } | { choices: Record<string, number> };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */
 export type Session = {
@@ -281,6 +316,21 @@ export async function sendMessage(
     request = jsonRequest("POST", { text });
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
+}
+
+/** Answers a plan card: the shop owner's message saying what was chosen comes back, and the
+ * producer starts on it. */
+export async function answerPlanCard(
+  sessionId: string,
+  card: number,
+  answer: PlanCardAnswer,
+): Promise<Sent> {
+  return readJson<Sent>(
+    await fetch(
+      `/api/sessions/${sessionId}/plan-cards/${card}/answer/`,
+      jsonRequest("POST", answer),
+    ),
+  );
 }
 
 /** One clip of a scene as its card shows it (backend jobs/card_versions.py): every clip the
