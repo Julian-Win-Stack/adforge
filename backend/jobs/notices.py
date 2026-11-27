@@ -216,6 +216,11 @@ SERVICE_OUT_OF_MONEY = _developer("service_out_of_money")
 # The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
 VOICE_FREED = _developer("voice_freed")
 
+# The producer called a tool the plan card locks before the card was answered (#777).
+PLAN_CARD_LOCKED = _developer("plan_card_locked")
+# The producer's show_plan_card call couldn't make a card that can be shown (#777).
+PLAN_CARD_INVALID = _developer("plan_card_invalid")
+
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 
 

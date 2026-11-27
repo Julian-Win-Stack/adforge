@@ -24,6 +24,7 @@ class StartSceneAgent(Tool):
     Both scene kinds need a checked line and a presenter."""
 
     name = "start_scene_agent"
+    waits_for_the_plan_card = True
     scene: int
     instruction: str = Field(description="What this scene must do, from the producer.")
 
@@ -106,6 +107,7 @@ class PassNote(Tool):
     A note opens a fresh run in the scene's existing conversation."""
 
     name = "pass_note"
+    waits_for_the_plan_card = True
     scenes: list[SceneNote] = Field(min_length=1)
 
     def run(self, call: ToolCall) -> str:

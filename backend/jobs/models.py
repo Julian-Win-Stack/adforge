@@ -216,6 +216,13 @@ class Job(models.Model):
         help_text="The target and scene lines kept longer after automatic shortenings; "
         "a changed script must fit its target again.",
     )
+    chosen_plan = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="What the shop owner chose on the plan card: the plan (style, seconds, "
+        "title, built on, opens, doubt) and their answer to each other question. Null until a "
+        "plan card is answered; the plan card's lock holds until then (agents/plan_card.py).",
+    )
     warnings = models.JSONField(
         default=list,
         blank=True,
@@ -1608,6 +1615,39 @@ class AgentFixTry(models.Model):
 
     def __str__(self) -> str:
         return f"Try {self.number}"
+
+
+class PlanCard(models.Model):
+    """A plan card the producer showed the shop owner (spec #768): 1 to 3 questions, one of
+    them always which of 3 plans, each with the producer's pick. Nothing is made until the
+    newest card of a job is answered. A card is open until it is answered or a newer card
+    replaces it."""
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="plan_cards")
+    tool_call = models.OneToOneField(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="The producer's show_plan_card call.",
+    )
+    card = models.JSONField(
+        help_text="The card as the producer wrote it: its opening sentence and its questions, "
+        "each with its choices and the producer's pick (agents/plan_card.py:Card)."
+    )
+    answer = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The index of the choice the shop owner picked in each question, by the "
+        "question's key. Null while the card is open.",
+    )
+    answered_at = models.DateTimeField(null=True, blank=True)
+    replaced_at = models.DateTimeField(
+        null=True, blank=True, help_text="When a newer card replaced it; it then takes no answer."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"Plan card {self.pk}"
 
 
 class OwnerQuestion(models.Model):

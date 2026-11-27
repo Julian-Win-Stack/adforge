@@ -33,6 +33,7 @@ from jobs.models import (
     Job,
     LibraryItem,
     OwnerQuestion,
+    PlanCard,
     ProducedItem,
     ProductPhoto,
     ProductVideo,
@@ -75,6 +76,7 @@ MODELS: tuple[Model, ...] = (
     SceneAgentRun,
     AgentFixTry,
     OwnerQuestion,
+    PlanCard,
 )
 
 # Where a row id is kept inside a JSON field: each path to it, a key or "*" for every item of
@@ -126,6 +128,9 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
     (AgentFixTry, "fix_check"),
     *((Job, name) for name in ("firecrawl", "colours", "side_photos", "product_photos")),
     (Job, "length_kept_script"),
+    (Job, "chosen_plan"),
+    (PlanCard, "card"),
+    (PlanCard, "answer"),
     (Job, "warnings"),
     (LibraryItem, "source"),
     (LibraryItem, "cut_out"),

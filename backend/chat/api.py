@@ -12,11 +12,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents import card_picks, page_panel, pause
+from agents import card_picks, page_panel, pause, plan_card
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import card_versions, owner_checks, work
-from jobs.models import ProducedItem, Scene
+from jobs.models import PlanCard, ProducedItem, Scene
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages, session_copy
@@ -125,6 +125,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
     tries = serializers.SerializerMethodField()
     question = serializers.SerializerMethodField()
     watch = serializers.SerializerMethodField()
+    plan_card = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -144,7 +145,15 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "pasted_page_result",
             "wants_pasted_page",
             "wants_more_photos",
+            "plan_card",
+            "answers_plan_card",
         ]
+
+    def get_plan_card(self, message: Message) -> dict[str, object] | None:
+        """The plan card the producer's message shows, as it stands now, or null."""
+        if message.plan_card is None:
+            return None
+        return plan_card.shown(message.plan_card)
 
     def get_watch(self, message: Message) -> dict[str, object] | None:
         """The scene and exact clip the notice asks the owner to watch, if it has one."""
@@ -474,7 +483,7 @@ def session_messages(request: Request, session_id: str) -> Response:
     poll.is_valid(raise_exception=True)
     newer = (
         found.messages.filter(seq__gt=poll.validated_data["after"])
-        .select_related("owner_question__scene", "watch_clip__scene")
+        .select_related("owner_question__scene", "watch_clip__scene", "plan_card")
         .prefetch_related("attachments__clip")
     )
     # Whether the shop owner's pause holds, with every poll, so the chat shows it as it stands
@@ -757,4 +766,46 @@ def check_clip(request: Request, session_id: str, scene: int) -> Response:
             "versions": [_card_version(one) for one in card_versions.shown(clip.scene)],
             "sent": sent,
         }
+    )
+
+
+class PlanCardAnswerSerializer(serializers.Serializer[None]):
+    """What the plan card sends: "Use the agent's picks", or the choice in each question by
+    its key, an index from 0 ("Make this ad"). A question left out keeps the agent's pick."""
+
+    use_picks = serializers.BooleanField(required=False, default=False)
+    choices = serializers.DictField(
+        child=serializers.IntegerField(min_value=0), required=False, default=dict
+    )
+
+
+@api_view(["POST"])
+def answer_plan_card(request: Request, session_id: str, card_id: int) -> Response:
+    """Answer the session's plan card: keeps the shop owner's choices, posts their message
+    saying what was chosen, and starts the producer on it. A card answered or replaced
+    already is refused."""
+    found = get_object_or_404(Session, pk=session_id)
+    card = get_object_or_404(PlanCard, pk=card_id, job__session=found)
+    answering = PlanCardAnswerSerializer(data=request.data)
+    answering.is_valid(raise_exception=True)
+    choices = None if answering.validated_data["use_picks"] else answering.validated_data["choices"]
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        if another_session_is_busy(found):
+            return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
+        try:
+            message = plan_card.answer(card, choices)
+        except plan_card.NotOpen:
+            return Response(
+                {"detail": "This plan card was already answered."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except plan_card.NotAChoice as wrong:
+            return Response({"detail": str(wrong)}, status=status.HTTP_400_BAD_REQUEST)
+        pause.clear(found, message)
+        wake_producer(str(found.pk))
+    found.refresh_from_db(fields=["name", "paused_at"])
+    return Response(
+        {"session": SessionSerializer(found).data, "message": MessageSerializer(message).data},
+        status=status.HTTP_201_CREATED,
     )

@@ -109,6 +109,7 @@ from . import (
     hard_list,
     loop,
     note_photos,
+    plan_card,
     snapshot,
     step_signals,
     voice_changes,
@@ -119,6 +120,7 @@ from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import AskedChangeFiling, ToolCall
 from .money import dollars
+from .plan_card import ShowPlanCard
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
 
@@ -158,8 +160,9 @@ You work by calling tools. Call one when you need it, read what it hands back, a
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, reply to them. Never end a reply with a \
 question to the owner. Decide, act, and say what you chose in one short sentence.
-The usual order is: read the page, plan the ad, create the person, run the planning
-checks, create the music, and call start_scene_agent for every scene once its presenter
+The usual order is: read the page, show the plan card and wait for its answer, plan the \
+ad, create the person, run the planning checks, create the music, and call \
+start_scene_agent for every scene once its presenter
 and checked line exist. Start all ready scenes together in one turn, without waiting for
 one to finish before starting another. Give each scene your own instruction and exact
 chunks of the owner's messages in quotes. Code checks those quotes; if refused, quote
@@ -214,6 +217,20 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
+Once the page is read, show the plan card with show_plan_card before anything is planned \
+or made: every tool that plans, makes or starts work refuses until the shop owner answers \
+it, and a message in the chat doesn't answer it. The card is the one place you ask them \
+anything. Write 3 plans from what the page says. First name the 2 or 3 doubts a buyer \
+seeing this product for the first time has, assuming new buyers unless the shop owner says \
+otherwise; each plan answers one of them. Build each plan on one thing this listing has \
+that similar products don't, and say in one sentence how it opens. The plans differ for a \
+reason: each answers a different doubt or tells its story another way. """
+    + plan_card.STYLES_RULE
+    + """Mark your pick. Leave out a question the shop owner's messages already answered, and \
+treat its answer as given; the plans question is always there. Ask which product option the \
+ad is for only when the page sells more than one and they haven't said, and at most one more \
+question of your own. When their answer comes, plan the ad. While the card is open, answer \
+their messages as usual.
 Before the first plan, call plan_ad. It picks the main-looking size or pack and its
 price, uses the clear product photos it has, draws any missing part and plans ordinary
 use when the page doesn't describe it. After planning, tell the owner its choices in one
@@ -637,6 +654,7 @@ class PlanAd(Tool):
     person who presents it. Choose with the evidence available and report the choices."""
 
     name = "plan_ad"
+    waits_for_the_plan_card = True
     stops_ad_when_filter_blocks = True
 
     def run(self, call: ToolCall) -> str:
@@ -714,6 +732,7 @@ class CreatePerson(Tool):
     The portrait is shown now; the voice is heard in the clips, with no advance sample."""
 
     name = "create_person"
+    waits_for_the_plan_card = True
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -744,6 +763,7 @@ class RemakePerson(Tool):
     their scene agents. Nothing is filmed until you call them. Look at the new portrait first."""
 
     name = "remake_person"
+    waits_for_the_plan_card = True
 
     remake: Literal["look", "voice", "both"] = Field(
         description='What to make again: "look" for a new portrait, "voice" for new voice words, '
@@ -938,6 +958,7 @@ class SetPlace(Tool):
     clip again. Look at it (look, what "place") before you do."""
 
     name = "set_place"
+    waits_for_the_plan_card = True
 
     scene: int = Field(description="The number of the scene.")
     new_place: str | None = Field(
@@ -1050,6 +1071,7 @@ class CreateMusic(Tool):
     have passed."""
 
     name = "create_music"
+    waits_for_the_plan_card = True
 
     mood: str = Field(
         min_length=1,
@@ -1110,6 +1132,7 @@ class MakePicture(Tool):
     or why it couldn't be made."""
 
     name = "make_picture"
+    waits_for_the_plan_card = True
 
     prompt: str = Field(
         description="What to draw, in full: the picture model reads only this and the "
@@ -1587,6 +1610,7 @@ class AddScene(_SceneFields):
     later. It has nothing made yet: run the planning checks on it, then make its steps."""
 
     name = "add_scene"
+    waits_for_the_plan_card = True
 
     at: int = Field(description="The new scene's number: 1 to one past the last scene.")
 
@@ -1894,6 +1918,7 @@ class AssembleAd(Tool):
     finished and the music is made. Costs nothing."""
 
     name = "assemble_ad"
+    waits_for_the_plan_card = True
     runs_while_paused = True
 
     def run(self, call: ToolCall) -> str:
@@ -2681,6 +2706,7 @@ PRODUCER = Agent(
         UsePhotos,
         AddToLibrary,
         CantUseOwnerFiles,
+        ShowPlanCard,
         PlanAd,
         CreatePerson,
         RemakePerson,
@@ -2713,4 +2739,5 @@ PRODUCER = Agent(
     asks_again=True,
     snapshot=snapshot.ad_as_it_stands,
     holds_the_turn=note_photos.hold_the_turn,
+    gate=plan_card.hold,
 )

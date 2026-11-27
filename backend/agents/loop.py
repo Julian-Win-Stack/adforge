@@ -185,6 +185,9 @@ class Tool(BaseModel):
     # Whether an exhausted safety-filter block makes the whole ad impossible (#628).
     # Optional work still hands its failure back for the agent to decide what to do.
     stops_ad_when_filter_blocks: ClassVar[bool] = False
+    # Whether it waits for the shop owner's answer to the plan card (spec #768): an agent
+    # with a `gate` runs it past the gate first.
+    waits_for_the_plan_card: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
         """Do the work and say what happened. What it says is the result the agent is given,
@@ -248,6 +251,10 @@ class Agent:
     # saying why: the producer's holds it while a file sent with a scene's note is unused
     # (agents/note_photos.py). None never holds it.
     holds_the_turn: Callable[[Session], bool] | None = None
+    # What each of its tools that waits for the plan card goes through before it runs: it
+    # raises Refused while the card is unanswered (agents/plan_card.py:hold). None lets
+    # every tool run.
+    gate: Callable[[ToolCall], None] | None = None
 
     @property
     def turn_enders(self) -> set[str]:
@@ -685,6 +692,8 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
             raise Refused(
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
+        if agent.gate is not None and tool.waits_for_the_plan_card:
+            agent.gate(call)
         with charged_to(call), asking_again(agent.asks_again):
             result = given.run(call)
         if isinstance(result, ToolResult):
@@ -918,7 +927,9 @@ def _conversation(
     its pasted page as the page, and a system note tells the agent so.
 
     A system note comes where the agent was first given it, as a step does."""
-    said = list(session.messages.prefetch_related("attachments"))
+    said = list(
+        session.messages.select_related("answers_plan_card").prefetch_related("attachments")
+    )
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
@@ -1064,7 +1075,10 @@ def _as_given(happened: Message | ToolCall | SceneStep | SystemNote) -> Happened
             result=happened.result,
             pictures=[Shown(**picture) for picture in happened.pictures],
         )
-    return Said(
-        by="user" if happened.role == Message.Role.USER else "agent",
-        text=messages.as_read(happened, numbered=True),
-    )
+    text = messages.as_read(happened, numbered=True)
+    if happened.answers_plan_card is not None:
+        # Imported here: the plan card's tool is built on this module.
+        from .plan_card import for_producer
+
+        text = f"{text}\n\n{for_producer(happened.answers_plan_card)}"
+    return Said(by="user" if happened.role == Message.Role.USER else "agent", text=text)

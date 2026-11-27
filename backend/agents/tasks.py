@@ -35,7 +35,7 @@ from jobs.work import (
     version_label,
 )
 
-from . import card_picks, loop, page_panel, scene_agent, step_signals
+from . import card_picks, loop, page_panel, plan_card, scene_agent, step_signals
 from .loop import (
     EXPECTED_FAILURES,
     why_it_failed,
@@ -336,8 +336,9 @@ def _nudge(session: Session) -> bool:
             f"{left.for_producer[:1].upper()}{left.for_producer[1:]} "
             f"{'aren' if left.many else 'isn'}'t made yet, and nothing is running or waiting on "
             "the shop owner. Carry on, or tell the shop owner in one short message why you "
-            "can't. Only the unreadable-page and missing-product-photo stops, a pause, "
-            "or cost consent for a paid change the owner requested can wait on them."
+            "can't. Only the unreadable-page and missing-product-photo stops, an open plan "
+            "card, a pause, or cost consent for a paid change the owner requested can wait on "
+            "them."
         ),
     )
     notices.record(
@@ -378,8 +379,9 @@ def _whats_left(session: Session) -> _Left | None:
 
 
 def _something_will_wake_it(session: Session, since: datetime) -> bool:
-    """Whether running work, a missing page or product photo, pause or the step limit
-    will keep the producer from needing a nudge. No scene or planning question waits."""
+    """Whether running work, a missing page or product photo, an open plan card, pause or
+    the step limit will keep the producer from needing a nudge. No scene or planning
+    question waits."""
     job = session.jobs.first()
     assert job is not None
     if SceneStep.objects.filter(scene__job=job, status=SceneStep.Status.RUNNING).exists():
@@ -387,6 +389,8 @@ def _something_will_wake_it(session: Session, since: datetime) -> bool:
     if loop.paused(session) or loop.held_by_the_step_limit(session):
         return True
     if notices.asked_since(job, since) or messages.page_panel_wanted(session):
+        return True
+    if plan_card.open_card(session) is not None:
         return True
     if job.page_text and not job.photos.filter(from_video=None).exists():
         return True
