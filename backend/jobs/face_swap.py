@@ -127,11 +127,12 @@ def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
     what = _photo_with_a_face(job, item)
     if what is None:
         return item
-    portrait = _portrait(job)
-    if portrait is None and is_product_shots(job):
+    if is_product_shots(job) and not job.made_up_person:
         # A product-shots ad shows the shop's own model as photographed; a made-up person
-        # is swapped in only once the owner asks for one (make_up_a_person, #775).
+        # is swapped in only once the owner asks for one (make_up_a_person, #775), never a
+        # presenter left from a person-talking plan.
         return item
+    portrait = _portrait(job)
     # Only the same photo waits: the ad's other swaps go on.
     with one_at_a_time(FACE_SWAP_LOCK, f"{job.pk}:{item.number}"):
         if portrait is None:

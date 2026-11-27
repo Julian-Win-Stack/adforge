@@ -246,6 +246,12 @@ class Job(models.Model):
         help_text="A product-shots ad's plan beyond its scenes, as the producer wrote it: "
         '{"story": ..., "built_on": ..., "music_mood": ...}. Empty for a person-talking ad.',
     )
+    made_up_person = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="Whether the shop owner asked for a made-up person in place of the model in "
+        "their photos, in a product-shots ad (make_up_a_person): only then is a face swapped.",
+    )
     warnings = models.JSONField(
         default=list,
         blank=True,

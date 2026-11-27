@@ -886,7 +886,11 @@ def test_the_shops_model_shows_as_photographed_with_no_portrait_and_no_swap(
 
 
 def test_an_ai_scene_drawn_from_the_models_photo_keeps_the_model(
-    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
 ) -> None:
     fake_model.answer_unscripted("note_face", lambda _: {"has_face": True})
     one_scene_started(
@@ -901,34 +905,117 @@ def test_an_ai_scene_drawn_from_the_models_photo_keeps_the_model(
 
     assert Scene.objects.get(number=1).produced.filter(kind=ProducedItem.Kind.CLIP).exists()
     assert not {"swap_face", "check_face_swap", "draw_person"} & set(paid_for())
+    # Not even a "no presenter to swap in" notice: the model is meant to be there.
+    assert not any("face" in text.lower() for _, text in recorded(api, session_id))
 
 
-def test_a_made_up_person_asked_for_is_swapped_into_only_the_scenes_with_the_model(
+def test_a_presenter_left_from_a_person_talking_plan_is_not_swapped_onto_the_model(
     producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
 ) -> None:
-    fake_model.answer_unscripted("check_face_swap", lambda _: FACE_PASSES)
-    filmed_product_shots(producer, fake_model, product_page_url)
-    # Only the side photo (library item 2, scene 2's) shows the shop's model.
+    fake_model.answer_unscripted("note_face", lambda _: {"has_face": True})
+    planned_product_shots(producer, fake_model, product_page_url, [REAL_PHOTO_SCENE])
+    # The chat planned a person-talking ad first and made its presenter.
+    job = Job.objects.get()
+    ProducedItem.objects.create(
+        job=job, kind=ProducedItem.Kind.PORTRAIT, file=job.photos.order_by("position")[0].file
+    )
+    fake_model.respond("fact_check", facts_ok(1))
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("use_real_photo", {})]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.told(
+        "Go on",
+        ("run_planning_checks", NO_CHOICES),
+        ("create_music", {"mood": "calm warm piano"}),
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Film the planned shot.", "quotes": [product_page_url]},
+        ),
+        "I'm making your ad.",
+    )
+    producer.woken("Scene 1 is filmed.")
+
+    assert Scene.objects.get(number=1).produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+    assert not {"swap_face", "check_face_swap"} & set(paid_for())
+
+
+MODEL_AND_MOOD = [REAL_PHOTO_SCENE, THREE_SCENES[0]]
+MADE_UP = {"gender": "woman", "looks": "late twenties, warm smile"}
+
+
+def model_and_mood_filmed(producer: ScriptedProducer, fake: FakeModel, link: str) -> Job:
+    """A two-scene product-shots ad filmed: scene 1 on the shop's side photo (library item 2),
+    which shows their model, and scene 2 drawn from the front photo (item 1), which doesn't,
+    with the side photo sent along as an extra view."""
+    fake.respond("check_page", READABLE)
+    fake.respond("fact_check", facts_ok(2))
+    fake.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake.respond(
+        "scene_agent",
+        turn(calls=[("use_real_photo", {})]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    fake.respond(
+        "scene_agent",
+        turn(calls=[("draw_silent_picture", SILENT_PICTURE)]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.told(
+        f"Make a product-shots ad for {link}",
+        ("read_page", {"link": link, "target_seconds": None}),
+        ("choose_ad_style", CHOSEN),
+        ("plan_product_shots", plan(MODEL_AND_MOOD)),
+        ("run_planning_checks", NO_CHOICES),
+        ("create_music", {"mood": "calm warm piano"}),
+        [
+            (
+                "start_scene_agent",
+                {"scene": n, "instruction": "Film the planned shot.", "quotes": [link]},
+            )
+            for n in (1, 2)
+        ],
+        "I'm making your ad.",
+    )
+    producer.finished_meanwhile()
+    producer.woken("Every scene is filmed.")
     job = Job.objects.get()
     side = job.library.get(number=2).source["photo"]
     job.photos.update(has_face=False)
     job.photos.filter(position=side).update(has_face=True)
+    return job
+
+
+def test_a_made_up_person_asked_for_is_swapped_into_the_scenes_that_show_the_model(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The fake face swap answers with a 72-pixel-wide picture.
+    monkeypatch.setattr(real_photo, "SMALLEST_WIDTH", 50)
+    fake_model.answer_unscripted("check_face_swap", lambda _: FACE_PASSES)
+    job = model_and_mood_filmed(producer, fake_model, product_page_url)
+    assert "swap_face" not in paid_for()
     asked = "Use a made-up model instead of the one in my photos"
     producer.told(
-        asked,
-        (
-            "make_up_a_person",
-            {"gender": "woman", "looks": "late twenties, warm smile", "quotes": [asked]},
-        ),
-        "I've made a new model.",
+        asked, ("make_up_a_person", {**MADE_UP, "quotes": [asked]}), "I've made a new model."
     )
 
+    # Scene 1 starts on the model's photo; scene 2's picture was drawn with it as an extra
+    # view, so both are named.
     told = results_of("make_up_a_person")[-1]
-    assert "Scenes 2 start" in told and "pass_note" in told
+    assert "Scenes 1, 2 show" in told and "pass_note" in told
     assert paid_for().count("draw_person") == 1
-    assert job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).exists()
+    portrait = job.produced.get(kind=ProducedItem.Kind.PORTRAIT)
 
-    script_silent_scenes(fake_model, 1)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("use_real_photo", {})]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
     producer.told(
         "Go ahead",
         (
@@ -936,8 +1023,8 @@ def test_a_made_up_person_asked_for_is_swapped_into_only_the_scenes_with_the_mod
             {
                 "scenes": [
                     {
-                        "scene": 2,
-                        "instruction": "Draw it again with the made-up person.",
+                        "scene": 1,
+                        "instruction": "Start again on the photo with the made-up person.",
                         "quotes": ["made-up model"],
                         "owner_asked": True,
                         "new_asked_change": "A made-up model replaces the shop's model.",
@@ -945,16 +1032,72 @@ def test_a_made_up_person_asked_for_is_swapped_into_only_the_scenes_with_the_mod
                 ]
             },
         ),
-        "Remaking scene 2.",
+        "Remaking scene 1.",
     )
-    producer.steps_run("Scene 2 has the new model.")
+    producer.steps_run("Scene 1 has the new model.")
 
+    # The real-photo scene starts on the side photo with the made-up person swapped in.
     assert paid_for().count("swap_face") == 1
+    assert not results_of("use_real_photo")[-1].startswith("Refused")
+    newest = (
+        job.scenes.get(number=1)
+        .produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE)
+        .order_by("-pk")
+        .first()
+    )
+    assert newest is not None
+    (used,) = (newest.sent or {})["photos"]
+    assert used["library_number"] == 2 and used["file"] != used["original_file"]
+    swapped = job.library.get(file=used["file"])
+    assert swapped.source["portrait"] == portrait.file
     clips = {
         scene.number: scene.produced.filter(kind=ProducedItem.Kind.CLIP).count()
         for scene in job.scenes.all()
     }
-    assert clips == {1: 1, 2: 2, 3: 1}
+    assert clips == {1: 2, 2: 1}
+
+
+def test_a_second_ask_for_a_made_up_person_is_pointed_to_remaking_them(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    model_and_mood_filmed(producer, fake_model, product_page_url)
+    asked = "Use a made-up model instead"
+    producer.told(asked, ("make_up_a_person", {**MADE_UP, "quotes": [asked]}), "Done.")
+    again = "Make her older"
+    producer.told(
+        again,
+        ("make_up_a_person", {**MADE_UP, "looks": "in her fifties", "quotes": [again]}),
+        "OK.",
+    )
+
+    told = results_of("make_up_a_person")[-1]
+    assert told.startswith("Refused") and "remake_person" in told
+    assert paid_for().count("draw_person") == 1
+
+
+def test_a_made_up_person_with_no_scene_showing_the_model_remakes_nothing(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    job = model_and_mood_filmed(producer, fake_model, product_page_url)
+    job.photos.update(has_face=False)
+    asked = "Use a made-up model instead"
+    producer.told(asked, ("make_up_a_person", {**MADE_UP, "quotes": [asked]}), "Done.")
+
+    assert "nothing is made again" in results_of("make_up_a_person")[-1]
+    assert job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).exists()
+
+
+def test_a_made_up_person_is_refused_in_a_person_talking_ad(
+    producer: ScriptedProducer, fake_model: FakeModel, planned: None
+) -> None:
+    asked = "Plan it"
+    producer.told(
+        asked, ("make_up_a_person", {**MADE_UP, "quotes": [asked]}), "There's a presenter."
+    )
+
+    told = results_of("make_up_a_person")[-1]
+    assert told.startswith("Refused") and "person-talking" in told
+    assert not Job.objects.get().made_up_person
 
 
 def test_a_made_up_person_is_refused_without_the_owner_asking(
@@ -964,10 +1107,7 @@ def test_a_made_up_person_is_refused_without_the_owner_asking(
 
     producer.told(
         "Go on",
-        (
-            "make_up_a_person",
-            {"gender": "woman", "looks": "a young woman", "quotes": ["use a made-up model"]},
-        ),
+        ("make_up_a_person", {**MADE_UP, "quotes": ["use a made-up model"]}),
         "OK.",
     )
 
