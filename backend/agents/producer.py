@@ -123,7 +123,7 @@ from .models import AskedChangeFiling, ToolCall
 from .money import dollars
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
-from .shots_tools import ChooseAdStyle, PlanProductShots
+from .shots_tools import ChooseAdStyle, MakeUpAPerson, PlanProductShots
 
 LEGACY_FIXING_AGENT = "fixing_agent"
 
@@ -166,7 +166,9 @@ owner's own words. Start a scene on the real photo wherever the buyer must trust
 see: the exact product, its size beside something known, the product worn in the shop's \
 photo; an AI scene only for a mood or setting no photo shows. Then run_planning_checks, \
 create_music in the plan's mood, and start_scene_agent for every scene together. No person \
-is created for product shots. The rules below about the person, lines, talking and B-roll \
+is created for product shots: a photo of the shop's own model is used as it is. Only when the \
+owner asks for a made-up person instead, call make_up_a_person and pass_note to only the scenes \
+it names. The rules below about the person, lines, talking and B-roll \
 scenes are for person-talking ads."""
 
 INSTRUCTIONS = (
@@ -2857,6 +2859,7 @@ PRODUCER = Agent(
         CantUseOwnerFiles,
         ChooseAdStyle,
         PlanProductShots,
+        MakeUpAPerson,
         PlanAd,
         CreatePerson,
         RemakePerson,

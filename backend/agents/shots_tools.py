@@ -239,3 +239,70 @@ class PlanProductShots(Tool):
             f'page), create_music in the mood "{self.music_mood}", then start_scene_agent for '
             "every scene together."
         )
+
+
+class MakeUpAPerson(Tool):
+    """Only when the shop owner asks for a made-up person in place of the model in their
+    photos, in a product-shots ad: make that person's portrait, and hand back the scenes
+    whose photo shows the model. Pass a note to only those scenes, with the owner's words:
+    the made-up person's face is swapped in for the model's. Other scenes stay."""
+
+    name = "make_up_a_person"
+
+    gender: Literal["man", "woman"] = Field(description="What the made-up person presents as.")
+    looks: str = Field(
+        min_length=1,
+        description="How the made-up person looks, in a few words, fitting the product and "
+        "anything the owner said.",
+    )
+    quotes: list[str] = Field(
+        min_length=1, description="The shop owner's exact words asking for a made-up person."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        from chat import messages
+        from chat.models import Attachment, Message
+        from jobs import face_swap, work
+
+        from .owner_quotes import QuoteNotFound, check_session_quotes
+        from .producer import _shown_before, _the_job
+
+        try:
+            check_session_quotes(call.session, self.quotes)
+        except QuoteNotFound as error:
+            raise Refused(str(error)) from error
+        job = _the_job(call)
+        if job is None or not is_product_shots(job) or not job.scenes.exists():
+            raise Refused(
+                "a made-up person replaces the shop's model in a planned product-shots ad; a "
+                "person-talking ad has its presenter already."
+            )
+        job.person_gender = self.gender
+        job.person_looks = " ".join(self.looks.split())
+        job.save(update_fields=["person_gender", "person_looks"])
+        portrait = work.create_person(job)
+        if not _shown_before(call.session, portrait.file):
+            messages.add(
+                call.session,
+                role=Message.Role.AGENT,
+                carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file)],
+            )
+        photos = {item.number: item for item in originals(job)}
+        showing = [
+            scene.number
+            for scene in job.scenes.order_by("number")
+            if (item := photos.get(int((scene.silent or {}).get("photo", 0)))) is not None
+            and face_swap.shows_a_face(job, item)
+        ]
+        if not showing:
+            return (
+                "The made-up person is made and their portrait is shown, but no scene starts "
+                "on a photo with the model's face, so nothing is made again. Tell the owner."
+            )
+        listed = ", ".join(map(str, showing))
+        return (
+            "The made-up person is made and their portrait is shown. Scenes "
+            f"{listed} start on a photo with the model's face: pass_note to only those scenes, "
+            "with the owner's words, and the made-up person is swapped in. Tell the "
+            "owner which scenes are made again."
+        )

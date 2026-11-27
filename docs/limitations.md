@@ -16,6 +16,8 @@ Things AdForge doesn't do yet, on purpose. Don't build these without Julian's go
 
 ## Developer notes
 
+- **Product-shots ads show the shop's model as photographed.** A product photo with the shop's own model is used as it is, face included, with no face swap and no made-up person. Only when the owner asks for a made-up person is one created and swapped into the scenes whose photo shows the model, and only those scenes are made again. Person-talking ads still swap every stranger's face for the presenter. (#775, 2026-11-27.)
+
 - **The agent never asks for a photo or video; a wrong guess is fixed by a note afterwards.** The page-unreadable and no-product-photo stops before an ad can start, and cost consent for owner-requested paid changes, remain. (#662, 2026-11-15.)
 
 - **While making the first ad, the producer gives a scene one extra idea after it gives up.** This retry is limited to once per scene per owner message, with the normal scene-run caps. An owner-asked change gets one try per scene per message. Other failing steps still have only the producer's 100-calls-per-message cap. (#259, #662, #743.)

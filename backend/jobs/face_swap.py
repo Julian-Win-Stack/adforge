@@ -46,6 +46,7 @@ from .library import (
 )
 from .models import Job, ProducedItem
 from .notices import post_notice
+from .product_shots import is_product_shots
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,10 @@ def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
     if what is None:
         return item
     portrait = _portrait(job)
+    if portrait is None and is_product_shots(job):
+        # A product-shots ad shows the shop's own model as photographed; a made-up person
+        # is swapped in only once the owner asks for one (make_up_a_person, #775).
+        return item
     # Only the same photo waits: the ad's other swaps go on.
     with one_at_a_time(FACE_SWAP_LOCK, f"{job.pk}:{item.number}"):
         if portrait is None:
@@ -345,3 +350,8 @@ def _say_once(job: Job, kind: notices.Kind, scene: int, opening: str, text: str)
         return
     logger.warning("Job %s: %s", job.pk, text)
     post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene)
+
+
+def shows_a_face(job: Job, item: LibraryEntry) -> bool:
+    """Whether `item` is a photo, or a crop of one, that shows a person's face."""
+    return _photo_with_a_face(job, item) is not None
