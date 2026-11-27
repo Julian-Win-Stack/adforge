@@ -4,6 +4,7 @@ finished ad."""
 
 import contextvars
 import hashlib
+import io
 import json
 import logging
 import math
@@ -20,6 +21,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+import PIL.Image
 from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
@@ -78,6 +80,7 @@ from . import (
     photos,
     picker_grids,
     reference_photos,
+    side_photos,
 )
 from .checks import (
     DEFAULT_AD_SECONDS,
@@ -4976,7 +4979,7 @@ def assemble_ad(
                 post_notice(
                     job,
                     notices.END_CARD_WITHOUT_PHOTO,
-                    f"Product photo {photo.position} couldn't go on the end card ({unreadable}), "
+                    f"{photo.named} couldn't go on the end card ({unreadable}), "
                     "so the ad ends on a card with the product's name, line, price and website "
                     "but no photo.",
                     Message.Level.PROBLEM,
@@ -5015,28 +5018,109 @@ def end_card_of(job: Job, cuts: Sequence[assembly.Cut]) -> assembly.EndCard:
     )
 
 
-def end_card_photo(job: Job) -> ProductPhoto | None:
+# The end card fits its photo into a box END_CARD_TEXT_WIDTH (960 px) wide. A crop whose
+# longest side is under half that is blown up more than twice to fill it and looks soft, so
+# it is not used (#789).
+END_CARD_SMALLEST_CROP = assembly.END_CARD_TEXT_WIDTH // 2
+
+
+@dataclass(frozen=True)
+class EndCardPhoto:
+    """The picture an end card shows: its file in the file store, and what it is, as notices
+    name it."""
+
+    file: str
+    named: str
+
+
+def end_card_photo(job: Job) -> EndCardPhoto | None:
     """The product photo `job`'s end card shows large: the first in the ad's colour, preferring
     one of the product alone, with no stranger's face and not cut from a video; else the
-    first photo with no stranger's face. None, with a developer notice, when there is none:
-    the card is drawn without a photo."""
+    first photo with no stranger's face; else, when every photo shows one, a page photo
+    cropped to the product with the face left out (`_cropped_to_the_product`). None, with a
+    developer notice saying why, when there is none: the card is drawn without a photo."""
     usable = job.photos.filter(has_face=False, from_video=None)
     photo = (
         usable.filter(shows_product_colour=True).order_by("-alone", "position").first()
         or usable.order_by("position").first()
     )
-    if photo is None:
+    if photo is not None:
+        return EndCardPhoto(photo.file, f"Product photo {photo.position}")
+    cropped, not_cropped = _cropped_to_the_product(job)
+    if cropped is not None:
+        return cropped
+    post_notice(
+        job,
+        notices.END_CARD_WITHOUT_PHOTO,
+        "No product photo without a stranger's face could go on the end card, and none could "
+        f"be cropped to the product without one ({'; '.join(not_cropped)}), so the ad ends on "
+        "a card with the product's name, line, price and website but no photo.",
+        Message.Level.PROBLEM,
+    )
+    return None
+
+
+def _cropped_to_the_product(job: Job) -> tuple[EndCardPhoto | None, list[str]]:
+    """The end card's photo when every product photo shows a stranger's face (#789): the
+    first page photo, those in the ad's colour first, whose true crop at the side picker's
+    box around the product (asked now unless its answer is kept) is at least
+    END_CARD_SMALLEST_CROP on its longest side and shows no face by its own face note. A
+    frame of a video is never cropped. With why each photo tried couldn't be used."""
+    faced = job.photos.filter(has_face=True, from_video=None).order_by(
+        "-shows_product_colour", "position"
+    )
+    on_the_page = [
+        (photo, item)
+        for photo in faced
+        if (item := library_items.in_the_library(job, library.PagePhoto(photo=photo.position)))
+        is not None
+    ]
+    if not on_the_page:
+        return None, ["no page photo to crop"]
+    answer = side_photos.answer_of(job)
+    if answer is None:
+        return None, ["the side picker, which boxes the product in the page photos, failed"]
+    not_cropped: list[str] = []
+    for photo, item in on_the_page:
+        named = f"product photo {photo.position}"
+        box = side_photos.box_of(answer, item.number)
+        made = side_photos.true_crop(job, item, box)
+        if made == side_photos.NO_BOX or box is None:
+            not_cropped.append(f"{named}: the side picker gave no box around the product")
+            continue
+        if made != side_photos.TOO_SMALL and made.number == item.number:
+            # The box fills the photo, so its crop is the photo itself, face and all.
+            not_cropped.append(f"{named}: the product fills it, so a crop keeps the face")
+            continue
+        if made == side_photos.TOO_SMALL or _longest_side(made.file) < END_CARD_SMALLEST_CROP:
+            not_cropped.append(
+                f"{named}: its crop is too small to look sharp (under "
+                f"{END_CARD_SMALLEST_CROP} px on its longest side)"
+            )
+            continue
+        if note_face(
+            job, f"{photo.source_url or photo.file} cropped to {box.model_dump()}", made.file
+        ):
+            not_cropped.append(f"{named}: its crop still shows a face")
+            continue
+        tried = f" ({'; '.join(not_cropped)})" if not_cropped else ""
         post_notice(
             job,
-            notices.END_CARD_WITHOUT_PHOTO,
-            "No product photo without a stranger's face could go on the end card, so the ad "
-            "ends on a card with the product's name, line, price and website but no photo.",
-            Message.Level.PROBLEM,
+            notices.END_CARD_PHOTO_CROPPED,
+            f"Every product photo shows a stranger's face, so the end card shows {named} "
+            f"cropped to the product with no face in it{tried}.",
+            Message.Level.INFO,
         )
-    return photo
+        return EndCardPhoto(made.file, f"A crop of {named}"), not_cropped
+    return None, not_cropped
 
 
-def end_card_record(card: assembly.EndCard, photo: ProductPhoto | None) -> dict[str, Any]:
+def _longest_side(key: str) -> int:
+    with PIL.Image.open(io.BytesIO(file_store.read(key))) as picture:
+        return max(picture.size)
+
+
+def end_card_record(card: assembly.EndCard, photo: EndCardPhoto | None) -> dict[str, Any]:
     """The end card as a finished ad keeps it: its text and times, and its photo's file."""
     return {**asdict(card), "file": photo.file if photo is not None else ""}
 
