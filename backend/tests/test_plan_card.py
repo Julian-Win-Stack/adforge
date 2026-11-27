@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from agents import plan_card
 from agents.models import SystemNote
 from gateway.fake import turn
 from jobs.models import Job, ProducedItem
@@ -112,8 +113,8 @@ def test_a_producer_that_plans_before_the_card_is_refused_and_then_shows_the_car
     )
 
     [refused] = results_of("plan_ad")
-    assert "plan card must be shown and answered first" in refused
-    assert "plan card must be shown and answered first" in results_of("create_person")[0]
+    assert plan_card.LOCKED in refused
+    assert plan_card.LOCKED in results_of("create_person")[0]
     assert _kinds("plan_card_locked") == ["plan_card_locked", "plan_card_locked"]
     assert _the_card(api, session_id)["state"] == "open"
     assert not Job.objects.get().scenes.exists()
@@ -241,7 +242,7 @@ def test_a_message_in_the_chat_never_unlocks_and_no_nudge_is_sent_while_the_card
     _card_shown(producer, product_page_url)
     producer.told("ok go", ("plan_ad", {"why": "They said go."}), "Pick a plan on the card.")
 
-    assert "plan card must be shown and answered first" in results_of("plan_ad")[0]
+    assert plan_card.LOCKED in results_of("plan_ad")[0]
     assert Job.objects.get().chosen_plan is None
     assert not SystemNote.objects.filter(kind=SystemNote.Kind.NUDGE).exists()
 
@@ -332,7 +333,8 @@ def test_an_idea_typed_on_the_card_becomes_the_plan_and_unlocks_once_the_produce
         "Which plan? My own idea: Someone drinking it on the morning train",
     )
     first, second = results_of("plan_ad")
-    assert "plan card must be shown and answered first" in first
+    # The refusal points at their idea, not at a new card that would drop it.
+    assert plan_card.LOCKED_FOR_THE_IDEA in first
     assert _chosen()["idea"] == "Someone drinking it on the morning train"
     assert _chosen()["plan"]["title"] == "Morning commute"
     assert Job.objects.get().target_seconds == 25
@@ -573,20 +575,84 @@ def test_an_option_no_photo_shows_is_told_and_a_new_card_shown_with_nothing_made
     producer.fake_model.respond(
         "produce",
         turn(calls=[("plan_ad", {"why": "Answered."})]),
-        turn(
-            says="None of the photos shows the onyx pendant, so pick another stone.",
-            calls=[("show_plan_card", {**_option_card(WHICH_STONE), "why": "No onyx photo."})],
-        ),
+        turn(calls=[("show_plan_card", {**_option_card(WHICH_STONE), "why": "No onyx photo."})]),
     )
 
     answered = _answer(api, session_id, card["id"], choices={"product_option": 2, "plan": 0})
 
     assert answered.status_code == 201, answered.json()
     assert "none of the product's photos shows it" in str(given_to_the_producer(3))
-    assert "plan card must be shown and answered first" in results_of("plan_ad")[0]
-    assert _kinds("product_option_without_photo") == ["product_option_without_photo"]
+    assert plan_card.LOCKED in results_of("plan_ad")[0]
+    # The shop owner is told, after their answer.
+    assert chat(api, session_id)[2:4] == [
+        ("user", "Which stone? Onyx\nWhich plan? “Hot all morning” (Person talking, 20 s)"),
+        (
+            "notice",
+            "None of the page's photos shows Onyx, so I can't make the ad of it yet. Pick "
+            "another option on the new card, or send a photo of it.",
+        ),
+    ]
     job = Job.objects.get()
     assert job.model_calls.filter(purpose="plan_ad").count() == 0
     assert not job.scenes.exists()
     cards = [m["plan_card"] for m in _messages(api, session_id) if m.get("plan_card")]
     assert [c["state"] for c in cards] == ["answered", "open"]
+
+
+def test_a_product_whose_photos_show_no_single_option_is_never_held_for_one(
+    producer: ScriptedProducer,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from jobs import library_items
+
+    # Sizes that look alike: the picker labels every photo as all of them.
+    sizes = _with_options(["Small", "Large"])
+    sizes["pictures"] = [{**picture, "option": "all"} for picture in sizes["pictures"]]
+    producer.fake_model.respond("check_page", READABLE)
+    producer.fake_model.respond("pick_photos", sizes)
+    which = {"asks": "Which size?", "options": ["Small", "Large"], "all_of_them": "", "pick": 1}
+    producer.told(
+        f"Make an ad for {labelled_page}",
+        ("read_page", {"link": labelled_page, "target_seconds": None, "why": "To start."}),
+        turn(calls=[("show_plan_card", {**_option_card(which), "why": "Read."})]),
+    )
+    card = _the_card(api, session_id)
+    producer.fake_model.respond("produce", turn(says="On it."))
+
+    _answer(api, session_id, card["id"], choices={"product_option": 0, "plan": 0})
+
+    assert _chosen()["plan"]["title"] == "Hot all morning"
+    assert "option_without_photos" not in _chosen()
+    assert len(library_items.originals(Job.objects.get())) == 3
+
+
+def test_an_idea_for_an_option_no_photo_shows_cant_be_taken(
+    producer: ScriptedProducer,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    api: APIClient,
+    session_id: str,
+) -> None:
+    three = {**WHICH_STONE, "options": ["Jade", "Rose quartz", "Onyx"], "all_of_them": ""}
+    _read_with_options(
+        producer,
+        labelled_page,
+        ["Jade", "Rose quartz", "Onyx"],
+        turn(calls=[("show_plan_card", {**_option_card(three), "why": "Read."})]),
+    )
+    card = _the_card(api, session_id)
+    producer.fake_model.respond(
+        "produce",
+        turn(calls=[("take_owners_idea", {**IDEA_PLAN, "why": "Their idea."})]),
+        turn(calls=[("show_plan_card", {**_option_card(WHICH_STONE), "why": "No onyx."})]),
+    )
+
+    _answer(
+        api, session_id, card["id"], choices={"product_option": 2}, idea="On a black velvet tray"
+    )
+
+    assert "none of the photos shows Onyx" in results_of("take_owners_idea")[0]
+    # The new card waits for a new answer.
+    assert Job.objects.get().chosen_plan is None
+    assert not Job.objects.get().scenes.exists()

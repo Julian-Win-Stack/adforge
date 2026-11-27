@@ -38,9 +38,13 @@ ap.add_argument("--ad-hold", type=float, default=25.0, help="dollars: pause one 
 ap.add_argument("--only"); ap.add_argument("--stagger", type=int, default=20)
 ap.add_argument("--plan", type=int, choices=[1, 2, 3], help="answer each plan card with this plan, not the agent's picks")
 ap.add_argument("--card-wait", type=float, default=15.0, help="minutes: stop an ad with no plan card by then")
+ap.add_argument("--style", choices=["person_talking", "product_shots"], help="pin the ad style in the first message")
 a = ap.parse_args()
 R = a.run_dir
 PAUSE_AT, AD_HOLD = a.pause_at, a.ad_hold
+# An ad shown more plan cards than this is stuck: it stops, with a STOP line.
+MOST_CARDS = 4
+STYLE_PIN = {"person_talking": "Make it a person talking ad.", "product_shots": "Make it a product shots ad."}
 
 
 def req(m, u, d=None):
@@ -86,7 +90,8 @@ def finished():
 
 
 def answer_card(k, sid):
-    """Answer the ad's open plan card, if it has one; gives what was printed, or None."""
+    """Answer the ad's open plan card, if it has one, a newer card too: gives the card's id
+    and what was printed, or None."""
     msgs = req("GET", f"/sessions/{sid}/messages/")
     answered = {m.get("answers_plan_card") for m in msgs}
     cards = [m["plan_card"] for m in msgs if m.get("plan_card")]
@@ -97,7 +102,7 @@ def answer_card(k, sid):
     sent = {"use_picks": True} if a.plan is None else {"choices": {"plan": a.plan - 1}}
     req("POST", f"/sessions/{sid}/plan-cards/{card['id']}/answer/", sent)
     titles = ", ".join(f"{n}. {p['title']} ({p['style']}, {p['seconds']} s)" for n, p in enumerate(plans, 1))
-    return f"CARD {k}: {titles}; answered: " + ("the agent's picks" if a.plan is None else f"plan {a.plan}")
+    return card["id"], f"CARD {k}: {titles}; answered: " + ("the agent's picks" if a.plan is None else f"plan {a.plan}")
 
 
 def planned_or_carded(sid):
@@ -186,12 +191,25 @@ while True:
         live = [k for k in live if k not in held]
         cards, starts = run.setdefault("cards", {}), run.setdefault("started_at", {})
         for k in live:
-            if k in cards or k in stopped:
+            if k in stopped:
                 continue
-            said = answer_card(k, ads[k])
-            if said:
-                cards[k] = said; json.dump(run, open(run_p, "w"), indent=1)
-                print(f"{now()} {said}", flush=True)
+            if not isinstance(cards.get(k), list):  # a run.json from before every card was answered
+                cards[k] = []
+            got = answer_card(k, ads[k])
+            if got and len(cards[k]) >= MOST_CARDS:
+                why = f"plan card shown {len(cards[k]) + 1} times"
+                no_card_notice(ads[k], f"The ad-run script got a {why}, so it stopped answering.")
+                stopped.add(k); run["stopped"] = sorted(stopped); json.dump(run, open(run_p, "w"), indent=1)
+                with open(os.path.join(R, "STOP"), "a") as f:
+                    f.write(f"STOP: {k}: {why}\n")
+                print(f"{now()} STOP: {k}: {why} (no new ad starts). Tell Julian.", flush=True)
+                todo = []
+                continue
+            if got:
+                cards[k].append(got[0]); json.dump(run, open(run_p, "w"), indent=1)
+                print(f"{now()} {got[1]}", flush=True)
+                continue
+            if cards[k]:
                 continue
             began = datetime.datetime.fromisoformat(starts.get(k, run["started"]).replace("Z", "+00:00"))
             waited = (datetime.datetime.now(datetime.timezone.utc) - began).total_seconds() / 60
@@ -216,7 +234,8 @@ while True:
         if todo:
             l = todo[0]
             sid = req("POST", "/sessions/", {})["id"]
-            req("POST", f"/sessions/{sid}/messages/", {"text": l["url"]})
+            first = l["url"] if a.style is None else f"{l['url']} {STYLE_PIN[a.style]}"
+            req("POST", f"/sessions/{sid}/messages/", {"text": first})
             ads[l["key"]] = sid; json.dump(ads, open(ads_p, "w"), indent=1)
             run.setdefault("started_at", {})[l["key"]] = now(); json.dump(run, open(run_p, "w"), indent=1)
             print(f"{now()} STARTED {l['key']} {sid} (live {len(live)+1}, left {len(todo)-1}, spent ${cost:.2f})", flush=True)

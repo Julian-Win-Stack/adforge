@@ -88,3 +88,8 @@ def usable_photos(job: Job, photos: QuerySet[ProductPhoto]) -> QuerySet[ProductP
 def shown_in(job: Job, option: str) -> bool:
     """Whether any product photo of `job` shows `option` itself: one labelled with it."""
     return job.library.filter(option=option).exists() or job.photos.filter(option=option).exists()
+
+
+def any_labelled(job: Job) -> bool:
+    """Whether any product photo of `job` shows a single option: one labelled with one."""
+    return job.library.exclude(option="").exists() or job.photos.exclude(option="").exists()

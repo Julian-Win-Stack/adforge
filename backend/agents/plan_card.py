@@ -38,6 +38,12 @@ LOCKED = (
     "the plan card must be shown and answered first: call show_plan_card with 3 plans and "
     "wait for the shop owner's answer. A message in the chat doesn't answer it."
 )
+# The refusal while the shop owner's own idea from the card waits to be made the plan.
+LOCKED_FOR_THE_IDEA = (
+    "the shop owner answered the plan card with their own idea, which isn't the plan yet: "
+    "call take_owners_idea with it, or, if it can't be made, say why and show a new card."
+)
+ANSWERED_ALREADY = "the plan card was already answered, and the ad is planned from it."
 
 
 class Plan(BaseModel):
@@ -117,8 +123,8 @@ class ShowPlanCard(Tool):
         job = call.session.jobs.first()
         if job is None or not page_read(job):
             raise Refused("the product page hasn't been read yet, and the plans are made from it.")
-        if not waits_for_a_plan(job) or job.scenes.exists():
-            raise Refused("the plan card was already answered, and the ad is planned from it.")
+        if not locked(job):
+            raise Refused(ANSWERED_ALREADY)
         problem = self._problem(job)
         if problem is not None:
             notices.record(
@@ -130,6 +136,11 @@ class ShowPlanCard(Tool):
             raise Refused(f"the card can't be shown: {problem} Fix it and call it again.")
         card = self._card()
         with transaction.atomic():
+            # Under the job's row lock, as an answer is kept: an answer that came in since
+            # the check above isn't wiped.
+            job = Job.objects.select_for_update().get(pk=job.pk)
+            if not locked(job):
+                raise Refused(ANSWERED_ALREADY)
             job.plan_cards.filter(answered_at=None, replaced_at=None).update(
                 replaced_at=timezone.now()
             )
@@ -299,7 +310,7 @@ def hold(call: ToolCall) -> None:
     if not settings.PLAN_CARD_LOCK:
         return
     job = call.session.jobs.first()
-    if job is None or not page_read(job) or not waits_for_a_plan(job) or job.scenes.exists():
+    if job is None or not page_read(job) or not locked(job):
         return
     notices.record(
         call.session,
@@ -307,7 +318,15 @@ def hold(call: ToolCall) -> None:
         f"The producer called {call.tool} before the plan card was answered, so it was refused.",
         Message.Level.INFO,
     )
-    raise Refused(LOCKED)
+    chosen_plan = job.chosen_plan or {}
+    idea_waits = chosen_plan.get("idea") and NO_PHOTO not in chosen_plan
+    raise Refused(LOCKED_FOR_THE_IDEA if idea_waits else LOCKED)
+
+
+def locked(job: Job) -> bool:
+    """Whether making is locked for `job` by its plan card: nothing planned yet, and no
+    card answered with a plan that can be made."""
+    return waits_for_a_plan(job) and not job.scenes.exists()
 
 
 class NotOpen(Exception):
@@ -340,6 +359,8 @@ def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Me
     Call it under the session's work lock."""
     idea = idea.strip() if choices is not None else ""
     with transaction.atomic():
+        # The job's row first, then the card's, as ShowPlanCard takes them.
+        Job.objects.select_for_update().get(pk=card.job_id)
         card = PlanCard.objects.select_for_update().get(pk=card.pk)
         if card.replaced_at is not None and card.answered_at is None:
             raise Replaced
@@ -367,7 +388,13 @@ def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Me
         card.answer = picked
         job = card.job
         option = product_options.named(job, chosen(card).get("product_option"))
-        if option and not product_options.shown_in(job, option):
+        # A product whose photos show no single option (its sizes look alike) isn't held:
+        # the pick narrows nothing.
+        if (
+            option
+            and product_options.any_labelled(job)
+            and not product_options.shown_in(job, option)
+        ):
             # Nothing can be made of an option no photo shows: the lock holds, and the
             # producer tells the shop owner and shows a new card (for_producer).
             picked[NO_PHOTO] = option
@@ -378,13 +405,7 @@ def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Me
         assert job.session is not None
         if NO_PHOTO in picked:
             job.chosen_plan["plan"] = None
-            notices.record(
-                job.session,
-                notices.PRODUCT_OPTION_WITHOUT_PHOTO,
-                f"The shop owner chose the product option {option} on the plan card, but no "
-                "product photo shows it, so nothing is made until a new card is answered.",
-                Message.Level.PROBLEM,
-            )
+            job.chosen_plan[NO_PHOTO] = option
         elif job.chosen_plan["plan"] is not None:
             job.target_seconds = job.chosen_plan["plan"]["seconds"]
             fields.append("target_seconds")
@@ -392,9 +413,19 @@ def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Me
         said = "\n".join(_said(question, picked) for question in questions)
         if choices is None:
             said = f"{USE_THE_PICKS}\n{said}"
-        return messages.add(
+        said_by_them = messages.add(
             job.session, role=Message.Role.USER, text=said, answers_plan_card=card.pk
         )
+        if NO_PHOTO in picked:
+            # After their answer, as the reply to it.
+            notices.post_notice(
+                job,
+                notices.PRODUCT_OPTION_WITHOUT_PHOTO,
+                f"None of the page's photos shows {option}, so I can't make the ad of it yet. "
+                "Pick another option on the new card, or send a photo of it.",
+                Message.Level.PROBLEM,
+            )
+        return said_by_them
 
 
 # The key of a card's answer naming the product option chosen that no photo shows (#780).
@@ -451,9 +482,8 @@ def for_producer(card: PlanCard) -> str:
     if (option := card.answer.get(NO_PHOTO)) is not None:
         return (
             f"[The shop owner chose the product option {option} on the plan card, but none of "
-            "the product's photos shows it, so the ad can't be made of it. Nothing was made. "
-            "Tell them so in one short sentence, and show a new plan card with the options "
-            "the photos show, or ask them to send a photo of it.]"
+            "the product's photos shows it, so the ad can't be made of it. Nothing was made, "
+            "and they were told so. Show a new plan card with the options the photos show.]"
         )
     plan = kept["plan"]
     if plan is None:
@@ -492,6 +522,11 @@ class TakeOwnersIdea(Plan, Tool):
             raise Refused("the shop owner hasn't answered a plan card with an idea of their own.")
         if job.chosen_plan.get("plan") is not None:
             raise Refused("their idea is already the plan.")
+        if NO_PHOTO in job.chosen_plan:
+            raise Refused(
+                f"none of the photos shows {job.chosen_plan[NO_PHOTO]}, the product option they "
+                "chose, so their idea can't be made of it: show a new plan card."
+            )
         if self.style not in STYLES_OFFERED:
             raise Refused(
                 f'the app can\'t make "{self.style}" ads yet. Say so and show a new plan card.'
