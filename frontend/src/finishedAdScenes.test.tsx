@@ -5,7 +5,7 @@ import { Chat } from "./Chat";
 import type { Attachment, CardVersion, Message, SceneStep } from "./api";
 
 // Spec #729: the newest finished ad lists its scenes beside the player. A tap on a scene
-// plays that scene and opens its note; the notes are fixed together from under the ad.
+// plays the ad from that scene and opens its note; the notes are fixed together from under the ad.
 
 const NOW = "2026-11-19T10:00:00Z";
 
@@ -210,7 +210,7 @@ test("the finished ad lists its scenes in play order, with where each plays and 
   expect(parts.map((part) => part.style.flexGrow)).toEqual(["4.5", "3.5", "7.25"]);
 });
 
-test("tapping a scene plays that scene of the ad, stops at its end and opens its note", async () => {
+test("tapping a scene plays the ad from that scene, on past its end, and opens its note", async () => {
   const { user } = await session(madeAd());
 
   await user.click(row(2));
@@ -221,32 +221,19 @@ test("tapping a scene plays that scene of the ad, stops at its end and opens its
   expect(box.getAttribute("placeholder")).toBe("What should change in this scene?");
   expect(within(scenes()).queryByRole("textbox", { name: "Note for scene 1" })).toBeNull();
 
-  // Played to the scene's end, it stops there.
+  // Played to the scene's end, the ad plays on into the next scene.
   const pause = vi.mocked(HTMLMediaElement.prototype.pause);
   player().currentTime = 7.99;
   fireEvent.timeUpdate(player());
-  expect(pause).toHaveBeenCalled();
+  player().currentTime = 8.2;
+  fireEvent.timeUpdate(player());
+  expect(pause).not.toHaveBeenCalled();
 
   // Its part of the bar does the same.
   const bar = within(ad()).getByRole("group", { name: "The ad's scenes" });
   await user.click(within(bar).getByRole("button", { name: /^Scene 3,/ }));
   expect(player().currentTime).toBeCloseTo(8, 1);
   expect(within(scenes()).getByRole("textbox", { name: "Note for scene 3" })).toBeTruthy();
-});
-
-test("moved away on the player after a tap, the ad plays on past the scene's end", async () => {
-  const { user } = await session(madeAd());
-  await user.click(row(1));
-  const pause = vi.mocked(HTMLMediaElement.prototype.pause);
-
-  // The owner drags the player well past scene 1, which ends at 4.5 s.
-  player().currentTime = 9;
-  fireEvent.timeUpdate(player());
-  expect(pause).not.toHaveBeenCalled();
-  // Nor does the ad stop when it later passes scene 1's end again.
-  player().currentTime = 4.48;
-  fireEvent.timeUpdate(player());
-  expect(pause).not.toHaveBeenCalled();
 });
 
 test("the scene playing is marked while the ad plays", async () => {

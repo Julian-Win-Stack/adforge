@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
-import type { Attachment, SceneTime } from "./api";
+import type { Attachment } from "./api";
 import { SceneCardView } from "./ScenePanel";
 import { fixLabel, wordlessHint, type SceneWork, type WatchClip } from "./sceneWork";
 
 /** The newest finished ad, with its scenes beside it (spec #729): a row per scene in the
  * order they play, and a time bar under the player split into the scenes. A tap on a row, or
- * on its part of the bar, plays that scene of the ad and opens the row, which holds all a
+ * on its part of the bar, plays the ad from that scene on and opens the row, which holds all a
  * scene card offers: its note, and its versions to preview and swap in. "Fix N scenes" sends
  * every note at once. An ad made before scene times were kept lists its scenes without times,
  * and a tap only opens the row. */
@@ -20,8 +20,6 @@ export function FinishedAd({
   watch: WatchClip | null;
 }) {
   const video = useRef<HTMLVideoElement>(null);
-  // The scene played by a tap, which stops the ad at its end.
-  const stopping = useRef<SceneTime | null>(null);
   const [now, setNow] = useState(0);
   const [playing, setPlaying] = useState(false);
   // The row the owner opened, unless a chat notice asked for a scene since.
@@ -42,7 +40,6 @@ export function FinishedAd({
     const time = times.find((one) => one.scene === scene);
     const player = video.current;
     if (!time || !player) return;
-    stopping.current = time;
     player.currentTime = time.start;
     // A browser that won't play without a tap first still shows the scene's first frame.
     void player.play()?.catch(() => undefined);
@@ -63,19 +60,7 @@ export function FinishedAd({
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
-            onTimeUpdate={(event) => {
-              const player = event.currentTarget;
-              const at = player.currentTime;
-              setNow(at);
-              const scene = stopping.current;
-              if (scene === null) return;
-              // Moved away on the player itself: it plays on freely.
-              if (at < scene.start - 0.25 || at > scene.end + 0.5) stopping.current = null;
-              else if (at >= scene.end - 0.05) {
-                stopping.current = null;
-                player.pause();
-              }
-            }}
+            onTimeUpdate={(event) => setNow(event.currentTarget.currentTime)}
           />
           {times.length > 0 && (
             <div className="ad-bar" role="group" aria-label="The ad's scenes">
