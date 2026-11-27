@@ -483,7 +483,7 @@ def run_scenario(
     from evals.round_export import export_run
     from gateway.call_observer import use_call_observer
     from jobs import notices
-    from jobs.models import Job
+    from jobs.models import AdStyle, Job
     from jobs.page_source import use_page_source
 
     from .answers import answer_job
@@ -532,6 +532,11 @@ def run_scenario(
                 if made.status_code != 201:
                     raise RuntimeError(f"chat session could not start ({made.status_code})")
                 result.session_id = str(made.json()["id"])
+                # Pinned to person talking, so the run compares like with like with the
+                # baseline (#774).
+                Session.objects.filter(pk=result.session_id).update(
+                    pinned_ad_style=AdStyle.PERSON_TALKING
+                )
                 question_starts[result.session_id] = started_at
                 _send(api, result.session_id, scenario.first_message)
             else:
