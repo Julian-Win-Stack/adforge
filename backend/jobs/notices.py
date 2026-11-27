@@ -199,6 +199,8 @@ PENDING_NOTE_FAILED = _developer("pending_note_failed")
 MADE_PICTURE_FAILED = _developer("made_picture_failed")
 # ffmpeg couldn't join the clips and music into the ad: the producer is told it failed.
 ASSEMBLY_FAILED = _developer("assembly_failed")
+# A product-shots clip shorter than its scene's planned length, so the ad is shorter.
+CLIP_SHORTER_THAN_PLANNED = _developer("clip_shorter_than_planned")
 ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
 FACE_NOT_NOTED = _developer("face_not_noted")
 # No product photo could go on the end card (spec #401): it is drawn without one.

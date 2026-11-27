@@ -554,6 +554,14 @@ def test_a_filmed_product_shots_ad_is_put_together_with_its_overlays_and_the_mus
         raise AssertionError("a product-shots ad plays the music only")
 
     monkeypatch.setattr(assembly, "has_sound", clips_are_not_listened_to)
+    volumes = []
+    fit_the_music = assembly.music_filters
+
+    def music_filters(music_seconds: float, ad_seconds: float, volume: float) -> str:
+        volumes.append(volume)
+        return fit_the_music(music_seconds, ad_seconds, volume)
+
+    monkeypatch.setattr(assembly, "music_filters", music_filters)
     producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
 
     (ad,) = Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
@@ -564,6 +572,10 @@ def test_a_filmed_product_shots_ad_is_put_together_with_its_overlays_and_the_mus
         (9.0, 13.0, ""),
     ]
     assert ad.captions == []
+    assert volumes == [product_shots.MUSIC_ALONE_VOLUME]
+    told = results_of("assemble_ad")[-1]
+    assert "the music alone" in told
+    assert "captions" not in told and "voice" not in told
     assert ad.seconds == 13.0 + END_CARD_SECONDS
     width, height, seconds = video(read(ad.file))
     assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
@@ -601,3 +613,23 @@ def test_an_ad_put_together_again_from_the_same_scenes_is_not_made_twice(
     producer.told("Put it together", ("assemble_ad", {}), ("assemble_ad", {}), "Here's your ad!")
 
     assert Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD).count() == 1
+
+
+def test_a_clip_shorter_than_planned_shortens_the_ad_and_tells_the_developer(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    filmed_product_shots(producer, fake_model, product_page_url)
+    ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP, scene__number=1).update(seconds=3.0)
+
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
+
+    (ad,) = Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
+    assert [(cut["start"], cut["end"]) for cut in ad.cuts] == [(0.0, 3.0), (3.0, 8.0), (8.0, 12.0)]
+    assert any(
+        "Scene 1's clip lasts 3 seconds, shorter than the 4 seconds planned" in text
+        for _, text in recorded(api, session_id)
+    )

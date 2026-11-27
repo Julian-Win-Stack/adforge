@@ -1995,10 +1995,11 @@ def _library_picture(scene: Scene) -> str:
 
 
 class AssembleAd(Tool):
-    """Assemble the finished ad from every scene's clip, in order, with captions of the
-    written line timed from its transcript, the music under the voice and each scene's
-    overlay, and show it to the shop owner in the chat. Only once every scene is
-    finished and the music is made. Costs nothing."""
+    """Assemble the finished ad from every scene's clip, in order, with each scene's overlay,
+    the music and the end card, and show it to the shop owner in the chat. A person-talking
+    ad has captions of the written line timed from its transcript and the music under the
+    voice; a product-shots ad has each clip cut to its planned length and the music alone.
+    Only once every scene is finished and the music is made. Costs nothing."""
 
     name = "assemble_ad"
     runs_while_paused = True
@@ -2023,12 +2024,15 @@ class AssembleAd(Tool):
         if ad.end_card is not None:
             plays.append(f"the end card from {ad.end_card['start']:g} to {ad.end_card['end']:g}")
         how = (
-            f"each clip with its own sound, up to {assembly.AFTER_LAST_WORD_SECONDS:g} "
-            "seconds after its last word, with captions of the written line, "
+            "each clip cut to its planned length with no sound of its own, the music alone, "
+            if product_shots.is_product_shots(job)
+            else f"each clip with its own sound, up to {assembly.AFTER_LAST_WORD_SECONDS:g} "
+            "seconds after its last word, with captions of the written line, the music under "
+            "the voice, "
         )
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
-            f"{how}the music under the voice, each scene's overlay and the end card, and showed "
+            f"{how}each scene's overlay and the end card, and showed "
             f"it to the shop owner in the chat. {_listed(plays)}."
             f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
@@ -2351,7 +2355,7 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
     music = latest(job, ProducedItem.Kind.MUSIC)
     if music is None:
         raise Refused(
-            "the music hasn't been made yet, and it plays under the ad's voice. Create the "
+            "the music hasn't been made yet, and it plays through the ad. Create the "
             "music, then assemble the ad."
         )
     scene_clips = [_clip_and_transcript(scene) for scene in scenes]

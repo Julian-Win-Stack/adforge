@@ -378,7 +378,7 @@ def test_the_ad_isnt_assembled_before_the_music_is_made(
     assemble(fake_model, say)
 
     assert results_of("assemble_ad") == [
-        "Refused: the music hasn't been made yet, and it plays under the ad's voice. Create "
+        "Refused: the music hasn't been made yet, and it plays through the ad. Create "
         "the music, then assemble the ad. Nothing was done."
     ]
     assert ads() == []

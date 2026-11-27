@@ -4941,13 +4941,21 @@ def assemble_ad(
     if product_shots.is_product_shots(job):
         planned = product_shots.cuts([clip for clip, _ in scenes])
         drawn: list[assembly.Caption] = []
-        sound: dict[str, Any] = {
-            "clip_sound": False,
-            "music_volume": product_shots.MUSIC_ALONE_VOLUME,
-        }
+        clip_sound, music_volume = False, product_shots.MUSIC_ALONE_VOLUME
+        for cut in planned:
+            scene = job.scenes.get(number=cut.scene)
+            if cut.clip_end < product_shots.planned_seconds(scene):
+                post_notice(
+                    job,
+                    notices.CLIP_SHORTER_THAN_PLANNED,
+                    f"Scene {cut.scene}'s clip lasts {cut.clip_end:g} seconds, shorter than the "
+                    f"{product_shots.planned_seconds(scene):g} seconds planned, so the ad is "
+                    "that much shorter.",
+                    Message.Level.PROBLEM,
+                )
     else:
         planned, drawn = _cuts_and_captions(job, scenes)
-        sound = {}
+        clip_sound, music_volume = True, assembly.MUSIC_VOLUME
     card = end_card_of(job, planned)
     photo = end_card_photo(job)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
@@ -4978,7 +4986,14 @@ def assemble_ad(
                 on_the_card.write_bytes(flat)
         ad = Path(folder) / "ad.mp4"
         assembly.join(
-            parts, ad, music=under, drawn=drawn, end_card=card, photo=on_the_card, **sound
+            parts,
+            ad,
+            music=under,
+            drawn=drawn,
+            end_card=card,
+            photo=on_the_card,
+            clip_sound=clip_sound,
+            music_volume=music_volume,
         )
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
