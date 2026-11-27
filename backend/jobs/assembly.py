@@ -122,9 +122,10 @@ def end_card_after(cuts: Sequence[Cut], seconds: float, card: CardParts) -> EndC
 
 
 # The fonts the end card is drawn in, kept in the repo with their licence (SIL Open Font
-# License) so every machine draws the same thing with nothing to install: ffmpeg is pointed
-# at the folder (join's `fontsdir`), and row widths are measured with the same files.
-FONTS = Path(__file__).parent / "fonts"
+# License, fonts/LICENSE-Inter.txt) so every machine draws the same thing with nothing to
+# install: ffmpeg is pointed at the folder (join's `fontsdir`), which holds font files only,
+# as it tries to load every file in it, and row widths are measured with the same files.
+FONTS = Path(__file__).parent / "fonts" / "inter"
 FONT_FILES = {
     "Inter ExtraBold": "Inter-ExtraBold.ttf",
     "Inter Bold": "Inter-Bold.ttf",
@@ -155,8 +156,10 @@ def _em() -> float:
 # FRAME_HEIGHT frame: inside the safe area with padding inside it and margins at the sides.
 CARD_TOP = SAFE_TOP + 40
 CARD_BOTTOM = SAFE_BOTTOM - 40
-CARD_WIDTH = FRAME_WIDTH - 2 * 60
+CARD_MARGIN = 60
+CARD_WIDTH = FRAME_WIDTH - 2 * CARD_MARGIN
 CARD_MIDDLE = FRAME_WIDTH // 2
+PHOTOS = frozenset({PartKind.PHOTO, PartKind.SECOND_PHOTO})
 
 
 @dataclass(frozen=True)
@@ -202,6 +205,9 @@ LINE_LOOKS = {
 # Words that need more rows than they have, or a word too wide for a row, are drawn smaller,
 # never below this size.
 SMALLEST_TEXT = 28
+# Words that need more rows than they have even at SMALLEST_TEXT, broken across rows, are
+# drawn smaller still, never below this size, rather than taking more rows.
+LEAST_TEXT = 16
 # What each size step does: words are drawn at this share of their size; a logo is this tall;
 # a photo is given at least this share of the card's height, the text drawn smaller to make
 # room, and a small photo is drawn at SMALL_PHOTO of the height it is given.
@@ -319,13 +325,12 @@ def end_card_layout(card: CardParts) -> CardLayout:
     # Photos next to each other in the order are drawn side by side in one row.
     rows: list[list[Part]] = []
     for part in drawn:
-        photo = part.kind in (PartKind.PHOTO, PartKind.SECOND_PHOTO)
-        if photo and rows and rows[-1][0].kind in (PartKind.PHOTO, PartKind.SECOND_PHOTO):
+        if part.kind in PHOTOS and rows and rows[-1][0].kind in PHOTOS:
             rows[-1].append(part)
         else:
             rows.append([part])
     room = CARD_BOTTOM - CARD_TOP
-    photo_rows = [row for row in rows if row[0].kind in (PartKind.PHOTO, PartKind.SECOND_PHOTO)]
+    photo_rows = [row for row in rows if row[0].kind in PHOTOS]
     photo_room = sum(max(PHOTO_SHARE[part.size] for part in row) for row in photo_rows) * room
 
     def fixed(scale: float) -> tuple[list[_Block | None], float]:
@@ -366,7 +371,7 @@ def end_card_layout(card: CardParts) -> CardLayout:
         elif kind == PartKind.LOGO:
             height = LOGO_HEIGHT[row[0].size] * scale
             pictures.append(
-                PictureBox(kind, row[0].file, 60, round(top), CARD_WIDTH, round(height))
+                PictureBox(kind, row[0].file, CARD_MARGIN, round(top), CARD_WIDTH, round(height))
             )
         else:
             height = photo_height
@@ -384,7 +389,7 @@ def _photo_boxes(row: Sequence[Part], top: float, height: float) -> list[Picture
     width = (CARD_WIDTH - PHOTOS_GAP * (len(row) - 1)) / len(row)
     boxes = []
     for number, part in enumerate(row):
-        left = 60 + number * (width + PHOTOS_GAP)
+        left = CARD_MARGIN + number * (width + PHOTOS_GAP)
         share = SMALL_PHOTO if part.size == Size.SMALL else 1.0
         boxes.append(
             PictureBox(
@@ -467,14 +472,18 @@ def _price_block(part: Part, scale: float, accent: str, order: int) -> _Block:
 def _wrapped(text: str, font: str, size: int, most_rows: int) -> tuple[list[str], int]:
     """`text` in rows that fit CARD_WIDTH at `size`, measured with the font, at most
     `most_rows` of them: smaller, down to SMALLEST_TEXT, when the words need more rows or a
-    word is too wide for one, and then a word too wide is broken across rows."""
+    word is too wide for one; then a word too wide is broken across rows, and the words are
+    made smaller still, down to LEAST_TEXT, to keep to `most_rows`. Words are never cut: what
+    still needs more rows at LEAST_TEXT takes them."""
     smallest = min(size, SMALLEST_TEXT)
+    least = min(size, LEAST_TEXT)
     while True:
         rows = _rows(text, font, size, break_words=size <= smallest)
-        fits = len(rows) <= most_rows and all(
-            text_width(row, font, size) <= CARD_WIDTH for row in rows
-        )
-        if fits or size <= smallest:
+        wide = any(text_width(row, font, size) > CARD_WIDTH for row in rows)
+        if not wide and (len(rows) <= most_rows or size <= least):
+            return rows, size
+        if wide and size <= smallest:
+            # Only a word too wide for a row is left, and it is now broken across rows.
             return rows, size
         size -= 2
 
@@ -505,7 +514,7 @@ def flat_photo(data: bytes) -> bytes:
     """A product photo as the end card draws it: its first frame as a PNG with no
     transparency, see-through parts white. Raises ValueError for a file that isn't a
     picture."""
-    picture = _picture(data)
+    picture = picture_of(data)
     flat = PIL.Image.new("RGB", picture.size, (255, 255, 255))
     flat.paste(picture, mask=picture.getchannel("A"))
     written = io.BytesIO()
@@ -513,7 +522,7 @@ def flat_photo(data: bytes) -> bytes:
     return written.getvalue()
 
 
-def _picture(data: bytes) -> PIL.Image.Image:
+def picture_of(data: bytes) -> PIL.Image.Image:
     """The first frame of a picture file, with its transparency. Raises ValueError for a file
     that isn't a picture."""
     try:
@@ -530,7 +539,7 @@ def end_card_picture(card: CardParts, pictures: Mapping[str, bytes]) -> bytes:
     it is, see-through parts and all. Raises ValueError for a picture that can't be read."""
     canvas = PIL.Image.new("RGBA", (FRAME_WIDTH, FRAME_HEIGHT), rgb_of(card_colour(card.accent)))
     for box in end_card_layout(card).pictures:
-        picture = _picture(pictures[box.file])
+        picture = picture_of(pictures[box.file])
         if box.kind != PartKind.LOGO:
             flat = PIL.Image.new("RGBA", picture.size, (255, 255, 255, 255))
             flat.alpha_composite(picture)

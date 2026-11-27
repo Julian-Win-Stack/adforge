@@ -72,7 +72,8 @@ def assert_fits(layout: assembly.CardLayout) -> None:
     for upper, lower in zip(stacked, stacked[1:], strict=False):
         assert upper[0].bottom <= lower[0].top + 0.5
     for words in layout.words:
-        assert 60 - 0.5 <= words.left and words.right <= assembly.FRAME_WIDTH - 60 + 0.5
+        margin = assembly.CARD_MARGIN
+        assert margin - 0.5 <= words.left and words.right <= assembly.FRAME_WIDTH - margin + 0.5
         (room,) = {
             (part.top, part.bottom)
             for part in layout.parts
@@ -252,6 +253,10 @@ def test_text_that_would_overflow_is_made_smaller_and_never_overlaps(
             shown = [w.text for w in layout.words if place(layout, kind).top <= w.middle_y]
             joined = "".join("".join(shown).split())
             assert joined.startswith("".join(content["text"].split()))
+    # The headline keeps to its 2 rows, drawn smaller rather than taking more.
+    headline = place(layout, K.HEADLINE)
+    rows = [w for w in layout.words if headline.top <= w.middle_y <= headline.bottom]
+    assert len(rows) <= assembly.MOST_ROWS[K.HEADLINE]
 
 
 def test_row_widths_are_measured_with_the_real_font() -> None:
@@ -333,7 +338,9 @@ def test_a_card_holds_each_kind_of_part_once_and_an_accent_colour() -> None:
 
 
 def test_the_fonts_and_their_licence_are_in_the_repo() -> None:
-    assert "SIL Open Font License" in (assembly.FONTS / "LICENSE.txt").read_text()
+    assert "SIL Open Font License" in (assembly.FONTS.parent / "LICENSE-Inter.txt").read_text()
+    # ffmpeg tries to load every file in the fonts folder: it holds fonts only.
+    assert {path.suffix for path in assembly.FONTS.iterdir()} == {".ttf"}
     for name, file in assembly.FONT_FILES.items():
         family, weight = PIL.ImageFont.truetype(assembly.FONTS / file, 20).getname()
         assert f"{family} {weight}" == name

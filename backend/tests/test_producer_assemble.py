@@ -11,7 +11,7 @@ import pytest
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
-from adforge.file_store import read
+from adforge.file_store import read, save
 from gateway.fake import FakeModel, turn
 from jobs import assembly
 from jobs.card_parts import CardParts, Part, PartKind, Size
@@ -630,6 +630,42 @@ def test_any_change_to_the_kept_end_card_gets_a_new_version_and_none_reuses_the_
         change(card).record(),
     )
     assert second.cuts == first.cuts and second.file != first.file
+
+
+def changed_photo(card: CardParts, file: str) -> dict[str, Any]:
+    return card.model_copy(
+        update={
+            "parts": tuple(
+                part.model_copy(update={"file": file}) if part.kind == PartKind.PHOTO else part
+                for part in card.parts
+            )
+        }
+    ).record()
+
+
+def test_an_end_card_photo_that_isnt_a_picture_is_left_off_and_says_so(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+) -> None:
+    # The card's photo is a file that can't be read as a picture.
+    broken = save("broken.png", b"not a picture")
+    Job.objects.update(end_card=changed_photo(end_card_parts(Job.objects.get()), broken))
+
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert ad.end_card is not None and ad.end_card["file"] == ""
+    # The finished ad keeps the card it was asked to draw, so the next join compares it.
+    kept = CardParts.model_validate(ad.end_card["card"]).part(PartKind.PHOTO)
+    assert kept is not None and kept.file == broken
+    assert video(read(ad.file))[2] == pytest.approx(15 + END_CARD_SECONDS, abs=0.1)
+    assert any(
+        level == "problem" and "end card's photo couldn't be drawn" in text
+        for level, text in recorded(api, session_id)
+    )
 
 
 def test_an_end_card_with_no_usable_photo_is_drawn_without_one_and_says_so(

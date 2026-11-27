@@ -5028,7 +5028,7 @@ def _end_card_pictures(job: Job, card: CardParts) -> tuple[CardParts, dict[str, 
             continue
         data = file_store.read(part.file)
         try:
-            assembly.flat_photo(data)
+            assembly.picture_of(data)
         except ValueError as unreadable:
             post_notice(
                 job,
