@@ -21,7 +21,9 @@ from agents.scene_forms import SPEED_LINE
 from agents.snapshot import AD_AS_IT_STANDS
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
+from jobs import assembly
 from jobs.assembly import website_of
+from jobs.card_parts import CardParts, PartKind
 from jobs.library import SentList
 from jobs.models import Job
 from jobs.planning import END_CARD_SECONDS
@@ -407,15 +409,30 @@ def test_one_link_with_no_instructions_makes_the_whole_ad_with_no_question_and_n
     assert [cut["scene"] for cut in ad.cuts] == [1, 2, 3]
     # The ad ends on its end card, from the plan and the product's link, after its last scene.
     last = ad.cuts[-1]["end"]
+    photo = job.photos.get(position=1).file
     assert ad.end_card == {
-        "name": "Stoneware Mug",
-        "line": "Hand-thrown, holds 350 ml, dishwasher safe.",
-        "price": "$24.00",
-        "website": website_of(product_page_url),
         "start": last,
         "end": last + END_CARD_SECONDS,
-        "file": job.photos.get(position=1).file,
+        "file": photo,
+        "card": CardParts.of(
+            {
+                PartKind.PHOTO: {"file": photo},
+                PartKind.HEADLINE: {"text": "Stoneware Mug"},
+                PartKind.PRICE: {"text": "$24.00"},
+                PartKind.SMALL_LINE: {"text": "Hand-thrown, holds 350 ml, dishwasher safe."},
+                PartKind.SHOP_LINE: {"text": website_of(product_page_url)},
+            }
+        ).record(),
     }
+    # Drawn in that order, the photo above the words, for 3 seconds.
+    assert END_CARD_SECONDS == 3
+    layout = assembly.end_card_layout(CardParts.model_validate(ad.end_card["card"]))
+    assert [words.text for words in layout.words] == [
+        "Stoneware Mug",
+        "$24.00",
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        website_of(product_page_url),
+    ]
     assert ad.seconds == last + END_CARD_SECONDS
     assert video(read(ad.file))[2] == pytest.approx(ad.seconds, abs=0.1)
     assert shows_the_end_card(read(ad.file), last + END_CARD_SECONDS / 2)

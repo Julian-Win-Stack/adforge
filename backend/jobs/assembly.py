@@ -2,19 +2,33 @@
 short of the silence before the ad's first word and after a clip's last."""
 
 import difflib
+import functools
 import io
 import json
 import math
 import subprocess
-import textwrap
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import PIL.Image
+import PIL.ImageDraw
+import PIL.ImageFont
 from django.conf import settings
+
+from jobs.card_parts import (
+    PICTURES,
+    CardParts,
+    Part,
+    PartKind,
+    Size,
+    badge_colour,
+    card_colour,
+    rgb_of,
+    sale_end_words,
+)
 
 # How loud the music plays under the voice: a fifth of its own volume, about 14 dB down, so
 # the voice is clearly heard over it. Fixed, the same for every ad.
@@ -93,73 +107,405 @@ class Caption:
 
 @dataclass(frozen=True)
 class EndCard:
-    """The card the ad ends on, after its last scene (spec #401): the product's name, one
-    line in the page's own words, its price (blank for none) and its website, drawn under
-    the product photo from `start` to `end`, in seconds, over the music alone."""
+    """The card the ad ends on, after its last scene (spec #783): the `card`'s parts, drawn
+    from `start` to `end`, in seconds, over the music alone."""
 
-    name: str
-    line: str
-    price: str
-    website: str
+    card: CardParts
     start: float
     end: float
 
 
+def end_card_after(cuts: Sequence[Cut], seconds: float, card: CardParts) -> EndCard:
+    """The end card, played for `seconds` after the last of `cuts`, showing `card`."""
+    start = cuts[-1].end
+    return EndCard(card=card, start=start, end=round(start + seconds, 3))
+
+
+# The fonts the end card is drawn in, kept in the repo with their licence (SIL Open Font
+# License) so every machine draws the same thing with nothing to install: ffmpeg is pointed
+# at the folder (join's `fontsdir`), and row widths are measured with the same files.
+FONTS = Path(__file__).parent / "fonts"
+FONT_FILES = {
+    "Inter ExtraBold": "Inter-ExtraBold.ttf",
+    "Inter Bold": "Inter-Bold.ttf",
+    "Inter SemiBold": "Inter-SemiBold.ttf",
+    "Inter Medium": "Inter-Medium.ttf",
+}
+
+
+@functools.cache
+def _font(name: str, size: int) -> PIL.ImageFont.FreeTypeFont:
+    return PIL.ImageFont.truetype(FONTS / FONT_FILES[name], size)
+
+
+def text_width(text: str, font: str, size: int) -> float:
+    """How wide `text` is drawn in `font` at `size` px, measured with the font itself."""
+    return _font(font, size).getlength(text)
+
+
+@functools.cache
+def _em() -> float:
+    """libass draws a font so its ascent and descent together fill the size it is given, which
+    for Inter is a little over its em: the size to give it for each px of a CSS font size."""
+    ascent, descent = _font("Inter Medium", 1000).getmetrics()
+    return (ascent + descent) / 1000
+
+
+# The end card's layout, from the approved mock-up (spec #783), for a FRAME_WIDTH by
+# FRAME_HEIGHT frame: inside the safe area with padding inside it and margins at the sides.
+CARD_TOP = SAFE_TOP + 40
+CARD_BOTTOM = SAFE_BOTTOM - 40
+CARD_WIDTH = FRAME_WIDTH - 2 * 60
+CARD_MIDDLE = FRAME_WIDTH // 2
+
+
 @dataclass(frozen=True)
-class Placed:
-    """One row of the end card's text: its words, size in px, whether bold, and the y of
-    its top edge, centred across the frame."""
+class _Look:
+    """How a kind of words is drawn: font, size in px and line height, as a share of it."""
+
+    font: str
+    size: int
+    line: float
+
+
+HEADLINE_LOOK = _Look("Inter ExtraBold", 76, 1.12)
+PRICE_LOOK = _Look("Inter ExtraBold", 122, 1.0)
+OLD_PRICE_LOOK = _Look("Inter Medium", 56, 1.21)
+BADGE_LOOK = _Look("Inter Bold", 46, 1.21)
+SALE_END_LOOK = _Look("Inter SemiBold", 42, 1.21)
+LINE_LOOK = _Look("Inter Medium", 44, 1.32)
+# The badge's padding around its words, top and bottom then each side; the gap between the
+# price, the old price and the badge; between photos side by side; a photo's corners.
+BADGE_PADDING = (12, 28)
+PRICE_ROW_GAP = 22
+PHOTOS_GAP = 24
+PHOTO_CORNER = 32
+# The old price and the lines of words are grey and soft dark grey; the badge's words white.
+OLD_PRICE_GREY = "#8b918d"
+SOFT_GREY = "#4a4f4c"
+WHITE = "#ffffff"
+# The most rows each kind of words may take before it is drawn smaller.
+MOST_ROWS = {
+    PartKind.HEADLINE: 2,
+    PartKind.SMALL_LINE: 2,
+    PartKind.SHOP_LINE: 1,
+    PartKind.EXTRA_LINE: 2,
+    PartKind.SALE_END: 1,
+}
+LINE_LOOKS = {
+    PartKind.HEADLINE: HEADLINE_LOOK,
+    PartKind.SMALL_LINE: LINE_LOOK,
+    PartKind.SHOP_LINE: LINE_LOOK,
+    PartKind.EXTRA_LINE: LINE_LOOK,
+    PartKind.SALE_END: SALE_END_LOOK,
+}
+# Words that need more rows than they have, or a word too wide for a row, are drawn smaller,
+# never below this size.
+SMALLEST_TEXT = 28
+# What each size step does: words are drawn at this share of their size; a logo is this tall;
+# a photo is given at least this share of the card's height, the text drawn smaller to make
+# room, and a small photo is drawn at SMALL_PHOTO of the height it is given.
+TEXT_SCALE = {Size.SMALL: 0.8, Size.NORMAL: 1.0, Size.LARGE: 1.25}
+LOGO_HEIGHT = {Size.SMALL: 90, Size.NORMAL: 120, Size.LARGE: 160}
+PHOTO_SHARE = {Size.SMALL: 0.25, Size.NORMAL: 0.4, Size.LARGE: 0.75}
+SMALL_PHOTO = 0.75
+# Text that would not fit is drawn smaller in steps of this much, down to LEAST_SCALE.
+SCALE_STEP = 0.05
+LEAST_SCALE = 0.3
+
+
+def _gap_after(kind: PartKind, next_kind: PartKind) -> int:
+    """The space between a part and the next, as the mock-up spaces them."""
+    if kind in PICTURES:
+        return 40
+    if kind == PartKind.HEADLINE:
+        return 30
+    if kind == PartKind.PRICE:
+        return 10 if next_kind == PartKind.SALE_END else 34
+    if kind == PartKind.SALE_END:
+        return 26
+    # Lines of words follow one another with no more space than their line height gives.
+    return 0 if next_kind in LINE_LOOKS and next_kind != PartKind.HEADLINE else 30
+
+
+@dataclass(frozen=True)
+class Words:
+    """One row of words on the end card: its text, font, size in px and colour; its centre;
+    its row's height; which of the card's parts of words it belongs to, counted from 0 in
+    the order they are drawn, which sets when it pops in; whether it is crossed out; and the
+    fill of the pill drawn behind it, blank for none."""
 
     text: str
+    font: str
     size: int
-    bold: bool
-    top: int
+    colour: str
+    middle_x: float
+    middle_y: float
+    height: float
+    order: int
+    struck: bool = False
+    pill: str = ""
 
     @property
-    def bottom(self) -> int:
-        return self.top + round(self.size * ROW_HEIGHT)
+    def width(self) -> float:
+        return text_width(self.text, self.font, self.size)
+
+    @property
+    def left(self) -> float:
+        return self.middle_x - self.width / 2
+
+    @property
+    def right(self) -> float:
+        return self.middle_x + self.width / 2
+
+    @property
+    def top(self) -> float:
+        return self.middle_y - self.height / 2
+
+    @property
+    def bottom(self) -> float:
+        return self.middle_y + self.height / 2
 
 
-# The end card is laid out from the bottom of the safe area up: the website, the price, the
-# line and the name, each wrapped to fit the frame's width, and the photo as large as fits
-# in what is left above them. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame. A row's
-# width is guessed from its characters at CHARACTER_WIDTH of its size each, a little over a
-# DejaVu Sans Bold letter's average width.
-END_CARD_PADDING = 40
-END_CARD_GAP = 24
-END_CARD_TEXT_WIDTH = FRAME_WIDTH - 2 * 60
-CHARACTER_WIDTH = 0.66
-ROW_HEIGHT = 1.25
-# Each part of the text, top to bottom: its size, whether bold, and most rows.
-NAME_TEXT = (64, True, 2)
-LINE_TEXT = (50, False, 3)
-PRICE_TEXT = (60, True, 1)
-WEBSITE_TEXT = (44, False, 1)
-# A part whose words need more rows than it has is drawn smaller, never below this size.
-SMALLEST_TEXT = 28
+@dataclass(frozen=True)
+class PictureBox:
+    """Where a picture part is drawn: the box it is fitted into, keeping its shape. A photo
+    gets rounded corners; a logo is drawn as it is."""
+
+    kind: PartKind
+    file: str
+    left: int
+    top: int
+    width: int
+    height: int
 
 
-def end_card_after(cuts: Sequence[Cut], seconds: float, **text: str) -> EndCard:
-    """The end card, played for `seconds` after the last of `cuts`, with `text` (its name,
-    line, price and website), each written on one line."""
-    start = cuts[-1].end
-    return EndCard(
-        **{part: " ".join(words.split()) for part, words in text.items()},
-        start=start,
-        end=round(start + seconds, 3),
+@dataclass(frozen=True)
+class PartPlace:
+    """The top and bottom of the room a drawn part takes on the card."""
+
+    kind: PartKind
+    top: float
+    bottom: float
+
+
+@dataclass(frozen=True)
+class CardLayout:
+    """Where everything on the end card goes: each drawn part's room, in order, its words
+    and its pictures."""
+
+    parts: tuple[PartPlace, ...]
+    words: tuple[Words, ...]
+    pictures: tuple[PictureBox, ...]
+
+
+@dataclass(frozen=True)
+class _Block:
+    """A part of words laid out from its own top: its height and its rows, each with its
+    centre's height below that top."""
+
+    kind: PartKind
+    height: float
+    rows: tuple[tuple[Words, float], ...]
+
+
+def end_card_layout(card: CardParts) -> CardLayout:
+    """Lay out the parts the `card` draws, top to bottom in its order, inside the card's
+    room in the safe area: each part of words at its size, made smaller when its words need
+    more rows than it has; photos next to each other in the order share a row, and the
+    photos take what height the rest leave, at least their share of the card, the words
+    drawn smaller to make room. A part not drawn leaves no gap."""
+    drawn = card.drawn()
+    # Photos next to each other in the order are drawn side by side in one row.
+    rows: list[list[Part]] = []
+    for part in drawn:
+        photo = part.kind in (PartKind.PHOTO, PartKind.SECOND_PHOTO)
+        if photo and rows and rows[-1][0].kind in (PartKind.PHOTO, PartKind.SECOND_PHOTO):
+            rows[-1].append(part)
+        else:
+            rows.append([part])
+    room = CARD_BOTTOM - CARD_TOP
+    photo_rows = [row for row in rows if row[0].kind in (PartKind.PHOTO, PartKind.SECOND_PHOTO)]
+    photo_room = sum(max(PHOTO_SHARE[part.size] for part in row) for row in photo_rows) * room
+
+    def fixed(scale: float) -> tuple[list[_Block | None], float]:
+        """The parts of words at `scale`, the room taken by them, the logos and the gaps."""
+        blocks: list[_Block | None] = []
+        order = 0
+        taken = 0.0
+        for number, row in enumerate(rows):
+            kind = row[0].kind
+            if kind in PICTURES:
+                blocks.append(None)
+                if kind == PartKind.LOGO:
+                    taken += LOGO_HEIGHT[row[0].size] * scale
+            else:
+                block = _block(row[0], scale, card.accent, order)
+                order += 1
+                blocks.append(block)
+                taken += block.height
+            if number + 1 < len(rows):
+                taken += _gap_after(kind, rows[number + 1][0].kind) * scale
+        return blocks, taken
+
+    scale = 1.0
+    blocks, taken = fixed(scale)
+    while taken + photo_room > room and scale - SCALE_STEP >= LEAST_SCALE:
+        scale = round(scale - SCALE_STEP, 2)
+        blocks, taken = fixed(scale)
+    photo_height = max(2.0, (room - taken) / len(photo_rows)) if photo_rows else 0.0
+    top = float(CARD_TOP) if photo_rows else CARD_TOP + max(0.0, room - taken) / 2
+    places: list[PartPlace] = []
+    words: list[Words] = []
+    pictures: list[PictureBox] = []
+    for number, (row, block) in enumerate(zip(rows, blocks, strict=True)):
+        kind = row[0].kind
+        if block is not None:
+            height = block.height
+            words += [replace(word, middle_y=top + below) for word, below in block.rows]
+        elif kind == PartKind.LOGO:
+            height = LOGO_HEIGHT[row[0].size] * scale
+            pictures.append(
+                PictureBox(kind, row[0].file, 60, round(top), CARD_WIDTH, round(height))
+            )
+        else:
+            height = photo_height
+            pictures += _photo_boxes(row, top, height)
+        places += [PartPlace(part.kind, top, top + height) for part in row]
+        top += height
+        if number + 1 < len(rows):
+            top += _gap_after(kind, rows[number + 1][0].kind) * scale
+    return CardLayout(tuple(places), tuple(words), tuple(pictures))
+
+
+def _photo_boxes(row: Sequence[Part], top: float, height: float) -> list[PictureBox]:
+    """The boxes of photos side by side in a row `height` tall from `top`, sharing its width;
+    a small photo drawn smaller in the middle of its box."""
+    width = (CARD_WIDTH - PHOTOS_GAP * (len(row) - 1)) / len(row)
+    boxes = []
+    for number, part in enumerate(row):
+        left = 60 + number * (width + PHOTOS_GAP)
+        share = SMALL_PHOTO if part.size == Size.SMALL else 1.0
+        boxes.append(
+            PictureBox(
+                part.kind,
+                part.file,
+                round(left + width * (1 - share) / 2),
+                round(top + height * (1 - share) / 2),
+                max(2, round(width * share)),
+                max(2, round(height * share)),
+            )
+        )
+    return boxes
+
+
+def _block(part: Part, scale: float, accent: str, order: int) -> _Block:
+    """`part`'s words laid out from its own top, at `scale` of their size."""
+    if part.kind == PartKind.PRICE:
+        return _price_block(part, scale, accent, order)
+    look = LINE_LOOKS[part.kind]
+    text = sale_end_words(part.ends) if part.kind == PartKind.SALE_END and part.ends else part.text
+    colour = {
+        PartKind.HEADLINE: accent,
+        PartKind.SALE_END: badge_colour(accent),
+    }.get(part.kind, SOFT_GREY)
+    size = max(1, round(look.size * TEXT_SCALE[part.size] * scale))
+    rows, size = _wrapped(" ".join(text.split()), look.font, size, MOST_ROWS[part.kind])
+    height = round(size * look.line)
+    return _Block(
+        part.kind,
+        height * len(rows),
+        tuple(
+            (
+                Words(row, look.font, size, colour, CARD_MIDDLE, 0.0, height, order),
+                height * (number + 0.5),
+            )
+            for number, row in enumerate(rows)
+        ),
     )
+
+
+def _price_block(part: Part, scale: float, accent: str, order: int) -> _Block:
+    """The price row: the price, then the old price crossed out and the "% off" badge when it
+    has them, side by side and centred, all drawn smaller together if they'd be too wide."""
+    pieces = [(" ".join(part.text.split()), PRICE_LOOK, accent, False, "")]
+    if part.old_price.strip():
+        pieces.append((" ".join(part.old_price.split()), OLD_PRICE_LOOK, OLD_PRICE_GREY, True, ""))
+    if part.percent is not None:
+        pieces.append((f"{part.percent}% off", BADGE_LOOK, WHITE, False, badge_colour(accent)))
+    factor = TEXT_SCALE[part.size] * scale
+    while True:
+        sizes = [max(1, round(look.size * factor)) for _, look, *_ in pieces]
+        widths = [
+            text_width(text, look.font, size) + (2 * BADGE_PADDING[1] * factor if pill else 0)
+            for (text, look, _, _, pill), size in zip(pieces, sizes, strict=True)
+        ]
+        across = sum(widths) + PRICE_ROW_GAP * factor * (len(pieces) - 1)
+        if across <= CARD_WIDTH or min(sizes) <= 1:
+            break
+        factor *= 0.95
+    heights = [
+        size * look.line + (2 * BADGE_PADDING[0] * factor if pill else 0)
+        for (_, look, _, _, pill), size in zip(pieces, sizes, strict=True)
+    ]
+    height = round(max(heights))
+    x = CARD_MIDDLE - across / 2
+    placed = []
+    for (text, look, colour, struck, pill), size, width, row in zip(
+        pieces, sizes, widths, heights, strict=True
+    ):
+        placed.append(
+            (
+                Words(text, look.font, size, colour, x + width / 2, 0.0, row, order, struck, pill),
+                height / 2,
+            )
+        )
+        x += width + PRICE_ROW_GAP * factor
+    return _Block(PartKind.PRICE, height, tuple(placed))
+
+
+def _wrapped(text: str, font: str, size: int, most_rows: int) -> tuple[list[str], int]:
+    """`text` in rows that fit CARD_WIDTH at `size`, measured with the font, at most
+    `most_rows` of them: smaller, down to SMALLEST_TEXT, when the words need more rows or a
+    word is too wide for one, and then a word too wide is broken across rows."""
+    smallest = min(size, SMALLEST_TEXT)
+    while True:
+        rows = _rows(text, font, size, break_words=size <= smallest)
+        fits = len(rows) <= most_rows and all(
+            text_width(row, font, size) <= CARD_WIDTH for row in rows
+        )
+        if fits or size <= smallest:
+            return rows, size
+        size -= 2
+
+
+def _rows(text: str, font: str, size: int, *, break_words: bool) -> list[str]:
+    """`text`'s words in rows no wider than CARD_WIDTH, a word too wide for a row left on
+    its own, or, with `break_words`, broken across rows."""
+    rows: list[str] = []
+    for word in text.split():
+        pieces = [word]
+        if break_words and text_width(word, font, size) > CARD_WIDTH:
+            pieces = []
+            for letter in word:
+                if pieces and text_width(pieces[-1] + letter, font, size) <= CARD_WIDTH:
+                    pieces[-1] += letter
+                else:
+                    pieces.append(letter)
+        for piece in pieces:
+            joined = f"{rows[-1]} {piece}" if rows else piece
+            if rows and piece is pieces[0] and text_width(joined, font, size) <= CARD_WIDTH:
+                rows[-1] = joined
+            else:
+                rows.append(piece)
+    return rows
 
 
 def flat_photo(data: bytes) -> bytes:
     """A product photo as the end card draws it: its first frame as a PNG with no
-    transparency, see-through parts white like the card, which every photo format can be
-    turned into and ffmpeg loops alike (it can't loop a GIF). Raises ValueError for a file
-    that isn't a picture."""
-    try:
-        with PIL.Image.open(io.BytesIO(data)) as opened:
-            picture = opened.convert("RGBA")
-    except (OSError, PIL.Image.DecompressionBombError, ValueError) as unreadable:
-        raise ValueError(f"the photo can't be read as a picture: {unreadable}") from unreadable
+    transparency, see-through parts white. Raises ValueError for a file that isn't a
+    picture."""
+    picture = _picture(data)
     flat = PIL.Image.new("RGB", picture.size, (255, 255, 255))
     flat.paste(picture, mask=picture.getchannel("A"))
     written = io.BytesIO()
@@ -167,55 +513,54 @@ def flat_photo(data: bytes) -> bytes:
     return written.getvalue()
 
 
+def _picture(data: bytes) -> PIL.Image.Image:
+    """The first frame of a picture file, with its transparency. Raises ValueError for a file
+    that isn't a picture."""
+    try:
+        with PIL.Image.open(io.BytesIO(data)) as opened:
+            return opened.convert("RGBA")
+    except (OSError, PIL.Image.DecompressionBombError, ValueError) as unreadable:
+        raise ValueError(f"the photo can't be read as a picture: {unreadable}") from unreadable
+
+
+def end_card_picture(card: CardParts, pictures: Mapping[str, bytes]) -> bytes:
+    """The end card's picture as a PNG, its words drawn over it later: the card's faintly
+    tinted white, with each picture part, read from `pictures` by its file key, fitted into
+    its box, keeping its shape: a photo flat on white with rounded corners, a logo exactly as
+    it is, see-through parts and all. Raises ValueError for a picture that can't be read."""
+    canvas = PIL.Image.new("RGBA", (FRAME_WIDTH, FRAME_HEIGHT), rgb_of(card_colour(card.accent)))
+    for box in end_card_layout(card).pictures:
+        picture = _picture(pictures[box.file])
+        if box.kind != PartKind.LOGO:
+            flat = PIL.Image.new("RGBA", picture.size, (255, 255, 255, 255))
+            flat.alpha_composite(picture)
+            picture = flat
+        fit = min(box.width / picture.width, box.height / picture.height)
+        size = (max(1, round(picture.width * fit)), max(1, round(picture.height * fit)))
+        picture = picture.resize(size, PIL.Image.Resampling.LANCZOS)
+        if box.kind != PartKind.LOGO:
+            picture.putalpha(_rounded(size, round(PHOTO_CORNER)))
+        at = (box.left + (box.width - size[0]) // 2, box.top + (box.height - size[1]) // 2)
+        canvas.alpha_composite(picture, at)
+    written = io.BytesIO()
+    canvas.convert("RGB").save(written, format="PNG")
+    return written.getvalue()
+
+
+def _rounded(size: tuple[int, int], corner: int) -> PIL.Image.Image:
+    """A mask the `size` of a picture with its corners rounded, drawn large and shrunk so
+    the curves are smooth."""
+    large = PIL.Image.new("L", (size[0] * 4, size[1] * 4), 0)
+    PIL.ImageDraw.Draw(large).rounded_rectangle(
+        (0, 0, large.width - 1, large.height - 1), radius=corner * 4, fill=255
+    )
+    return large.resize(size, PIL.Image.Resampling.LANCZOS)
+
+
 def website_of(url: str) -> str:
     """The website a product's link is on, as an ad writes it: its host, without "www."."""
     host = (urlsplit(url).hostname or "").lower()
     return host.removeprefix("www.")
-
-
-def end_card_text(card: EndCard) -> list[Placed]:
-    """The end card's rows of text, top to bottom, inside the safe area: its name, line,
-    price (when it has one) and website, each part wrapped to the frame's width."""
-    parts = [
-        (card.name, NAME_TEXT),
-        (card.line, LINE_TEXT),
-        (card.price, PRICE_TEXT),
-        (card.website, WEBSITE_TEXT),
-    ]
-    stacks = [_wrapped(text, *how) for text, how in parts if text.strip()]
-    placed: list[Placed] = []
-    bottom = SAFE_BOTTOM - END_CARD_PADDING
-    for rows, size, bold in reversed(stacks):
-        height = round(size * ROW_HEIGHT)
-        top = bottom - height * len(rows)
-        placed = [
-            Placed(row, size, bold, top + height * number) for number, row in enumerate(rows)
-        ] + placed
-        bottom = top - END_CARD_GAP
-    return placed
-
-
-def end_card_photo_box(card: EndCard) -> tuple[int, int]:
-    """The top and height of the box the end card's photo is fitted into: the safe area
-    above its text, the full width less margins."""
-    rows = end_card_text(card)
-    top = SAFE_TOP + END_CARD_PADDING
-    bottom = (rows[0].top if rows else SAFE_BOTTOM - END_CARD_PADDING) - END_CARD_GAP
-    # Never empty, so ffmpeg can always fit the photo into it.
-    return top, max(2, bottom - top)
-
-
-def _wrapped(text: str, size: int, bold: bool, most_rows: int) -> tuple[list[str], int, bool]:
-    """`text` in rows that fit END_CARD_TEXT_WIDTH at `size`, at most `most_rows` of them:
-    smaller, down to SMALLEST_TEXT, when the words need more rows or a word is too long for
-    one."""
-    while True:
-        across = max(1, math.floor(END_CARD_TEXT_WIDTH / (size * CHARACTER_WIDTH)))
-        rows = textwrap.wrap(text, across, break_long_words=size <= SMALLEST_TEXT)
-        fits = len(rows) <= most_rows and all(len(row) <= across for row in rows)
-        if fits or size <= SMALLEST_TEXT:
-            return rows, size, bold
-        size -= 2
 
 
 class AssemblyFailed(Exception):
@@ -437,8 +782,9 @@ OVERLAY_MARGIN = SAFE_TOP + 20
 # overlays are white and bold so they read over any picture. A caption is outlined (border
 # style 1) and centred along the bottom (alignment 2) above a margin; an overlay sits in a
 # half-dark box (border style 3, whose box takes the outline colour) centred along the top
-# (alignment 8) below one. The end card's text is dark on its white card, each row placed
-# where end_card_text puts it. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
+# (alignment 8) below one. The end card's words are drawn in Inter, each row centred
+# (alignment 5) where end_card_layout puts it, in its own font, size and colour. Sizes are
+# for a FRAME_WIDTH by FRAME_HEIGHT frame.
 TEXT_STYLES = f"""\
 [Script Info]
 ScriptType: v4.00+
@@ -454,8 +800,8 @@ Style: Caption,DejaVu Sans,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0
 100,100,0,0,1,5,0,2,60,60,{CAPTION_MARGIN},1
 Style: Overlay,DejaVu Sans,72,&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,-1,0,0,0,\
 100,100,0,0,3,18,0,8,60,60,{OVERLAY_MARGIN},1
-Style: EndCard,DejaVu Sans,50,&H00202020,&H00202020,&H00FFFFFF,&H00FFFFFF,0,0,0,0,\
-100,100,0,0,1,0,0,8,60,60,0,1
+Style: EndCard,Inter Medium,50,&H00202020,&H00202020,&H00FFFFFF,&H00FFFFFF,0,0,0,0,\
+100,100,0,0,1,0,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -467,7 +813,8 @@ def write_text_to_draw(
 ) -> None:
     """Write the text on the ad as an ASS file for ffmpeg to draw, at `into`: the captions,
     each part's overlay for as long as its picture plays, or, for a part whose picture
-    plays not at all, while its line is said, and the end card's text while it shows."""
+    plays not at all, while its line is said, and the end card's words while it shows,
+    each part of them popping in after the one before."""
     lines = [TEXT_STYLES]
     lines += [_shown("Caption", caption.text, caption.start, caption.end) for caption in drawn]
     lines += [
@@ -478,27 +825,94 @@ def write_text_to_draw(
         if part.overlay
     ]
     if end_card is not None:
-        lines += [
-            _shown(
-                "EndCard",
-                row.text,
-                end_card.start,
-                end_card.end,
-                styled=f"\\an8\\pos({FRAME_WIDTH // 2},{row.top})\\fs{row.size}"
-                f"\\b{int(row.bold)}\\q2",
-            )
-            for row in end_card_text(end_card)
-        ]
+        for words in end_card_layout(end_card.card).words:
+            lines += _end_card_words(words, end_card.start, end_card.end)
     into.write_text("".join(lines), encoding="utf-8")
 
 
-def _shown(style: str, text: str, start: float, end: float, styled: str = "") -> str:
+# How a row of words pops in (spec #783): from POP_FROM of its size and see-through, it grows
+# to POP_OVER and fully solid by POP_PEAK of its POP_MS, then settles at its size. The first
+# part of words starts FIRST_POP_MS after the card does, each next one POP_APART_MS later.
+POP_FROM = 70
+POP_OVER = 107
+POP_PEAK = 0.6
+POP_MS = 420
+FIRST_POP_MS = 120
+POP_APART_MS = 110
+
+
+def pop_in(order: int) -> str:
+    """The ASS tags that pop in the part of words drawn `order`th, counted from 0, timed from
+    the start of the card."""
+    starts = FIRST_POP_MS + POP_APART_MS * order
+    peak = starts + round(POP_MS * POP_PEAK)
+    return (
+        f"\\fscx{POP_FROM}\\fscy{POP_FROM}\\alpha&HFF&"
+        f"\\t({starts},{peak},\\fscx{POP_OVER}\\fscy{POP_OVER}\\alpha&H00&)"
+        f"\\t({peak},{starts + POP_MS},\\fscx100\\fscy100)"
+    )
+
+
+def _end_card_words(words: Words, start: float, end: float) -> list[str]:
+    """A row of the end card's words as the ASS format lists it, crossed out if it is, over
+    its pill, if it has one, drawn behind it at the same place so the two pop in as one."""
+    placed = f"\\an5\\pos({words.middle_x:.1f},{words.middle_y:.1f})"
+    drawn = []
+    if words.pill:
+        width = round(words.width + 2 * BADGE_PADDING[1] * words.size / BADGE_LOOK.size)
+        height = round(words.height)
+        drawn.append(
+            _shown(
+                "EndCard",
+                _pill(width, height),
+                start,
+                end,
+                styled=f"{placed}\\p1\\1c{_ass_colour(words.pill)}{pop_in(words.order)}",
+            )
+        )
+    drawn.append(
+        _shown(
+            "EndCard",
+            words.text,
+            start,
+            end,
+            styled=f"{placed}\\fn{words.font}\\fs{words.size * _em():.1f}"
+            f"\\1c{_ass_colour(words.colour)}\\s{int(words.struck)}\\q2{pop_in(words.order)}",
+            layer=1,
+        )
+    )
+    return drawn
+
+
+def _pill(width: int, height: int) -> str:
+    """An ASS drawing of a fully rounded pill `width` by `height`."""
+    r = height / 2
+    k = r * 0.5523  # a quarter circle's Bezier handle
+    w, h = width, height
+    return (
+        f"m {r:g} 0 l {w - r:g} 0 b {w - r + k:g} 0 {w:g} {r - k:g} {w:g} {r:g} "
+        f"b {w:g} {r + k:g} {w - r + k:g} {h:g} {w - r:g} {h:g} l {r:g} {h:g} "
+        f"b {r - k:g} {h:g} 0 {r + k:g} 0 {r:g} b 0 {r - k:g} {r - k:g} 0 {r:g} 0"
+    )
+
+
+def _ass_colour(colour: str) -> str:
+    """A "#rrggbb" colour as ASS writes one: blue, green, red."""
+    red, green, blue = rgb_of(colour)
+    return f"&H{blue:02X}{green:02X}{red:02X}&"
+
+
+def _shown(
+    style: str, text: str, start: float, end: float, styled: str = "", layer: int = 0
+) -> str:
     """One piece of text as the ASS format lists it: in `style`, from `start` to `end`, with
-    any `styled` override tags first."""
+    any `styled` override tags first, on `layer` (higher layers are drawn over lower)."""
     # Braces and backslashes would be read as styling, not shown.
     shown = text.replace("\\", "").replace("{", "(").replace("}", ")")
     tags = f"{{{styled}}}" if styled else ""
-    return f"Dialogue: 0,{_timestamp(start)},{_timestamp(end)},{style},,0,0,0,,{tags}{shown}\n"
+    return (
+        f"Dialogue: {layer},{_timestamp(start)},{_timestamp(end)},{style},,0,0,0,,{tags}{shown}\n"
+    )
 
 
 def _timestamp(seconds: float) -> str:
@@ -561,14 +975,14 @@ def join(
     music: Path,
     drawn: Sequence[Caption],
     end_card: EndCard | None = None,
-    photo: Path | None = None,
+    card_picture: Path | None = None,
 ) -> None:
     """Cut each clip file to its part's picture and voice, join the pictures, in order, and
     the voices, in order, apart, as each plays at its own time, and put them together with
     the music under the voice, the captions drawn along the bottom and each part's overlay
-    along the top, into the finished ad at `into`, ending on the `end_card`, if given, with
-    the product `photo` on it (a plain card without one), over the music alone. The ad lasts
-    as long as its picture."""
+    along the top, into the finished ad at `into`, ending on the `end_card`, if given, its
+    words drawn over its `card_picture` (end_card_picture), over the music alone. The ad
+    lasts as long as its picture."""
     inputs: list[str] = []
     filters: list[str] = []
     pictures: list[str] = []
@@ -610,18 +1024,19 @@ def join(
             )
         voices.append(f"[a{number}]")
     if end_card is not None:
+        assert card_picture is not None, "an end card is drawn over its picture"
         pictures.append("[card]")
-        filters.append(_end_card_picture(end_card, photo, len(parts)))
-        if photo is not None:
-            inputs += ["-loop", "1", "-framerate", str(FRAME_RATE), "-i", str(photo)]
+        filters.append(_end_card_picture(end_card, len(parts)))
+        inputs += ["-loop", "1", "-framerate", str(FRAME_RATE), "-i", str(card_picture)]
     filters.append(f"{''.join(pictures)}concat=n={len(pictures)}:v=1:a=0[joined]")
     filters.append(f"{''.join(voices)}concat=n={len(voices)}:v=0:a=1[said]")
     # ffmpeg reads the text to draw from a file beside the ad, whose path has nothing to
     # escape.
     text = into.parent / "text.ass"
     write_text_to_draw(drawn, [cut for _, cut in parts], text, end_card)
-    filters.append(f"[joined]subtitles={text}[v]")
-    music_input = len(parts) + (1 if end_card is not None and photo is not None else 0)
+    # The end card's fonts are read from the repo's folder of them, not the machine's.
+    filters.append(f"[joined]subtitles=filename={text}:fontsdir={FONTS}[v]")
+    music_input = len(parts) + (1 if end_card is not None else 0)
     inputs += ["-i", str(music)]
     ad_seconds = end_card.end if end_card is not None else parts[-1][1].end
     filters.append(f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
@@ -647,20 +1062,14 @@ def join(
     )
 
 
-def _end_card_picture(card: EndCard, photo: Path | None, input_number: int) -> str:
-    """The filter that draws the end card's picture, as [card]: the product `photo`, ffmpeg's
-    input `input_number`, as large as fits in its box on a white card, or the white card
-    alone with no photo. Its text is drawn over it with the rest of the ad's."""
+def _end_card_picture(card: EndCard, input_number: int) -> str:
+    """The filter that plays the end card's picture, ffmpeg's input `input_number`, for as
+    long as the card shows, as [card]. Its words are drawn over it with the rest of the
+    ad's text."""
     frames = round(card.end * FRAME_RATE) - round(card.start * FRAME_RATE)
-    blank = f"color=c=white:s={FRAME_WIDTH}x{FRAME_HEIGHT}:r={FRAME_RATE}"
-    if photo is None:
-        return f"{blank},setsar=1,format=yuv420p,trim=end_frame={frames}[card]"
-    top, height = end_card_photo_box(card)
     return (
-        f"[{input_number}:v]scale=w={END_CARD_TEXT_WIDTH}:h={height}:"
-        "force_original_aspect_ratio=decrease,"
-        f"pad={FRAME_WIDTH}:{FRAME_HEIGHT}:(ow-iw)/2:{top}+({height}-ih)/2:color=white,"
-        f"setsar=1,fps={FRAME_RATE},format=yuv420p,trim=end_frame={frames}[card]"
+        f"[{input_number}:v]scale={FRAME_WIDTH}:{FRAME_HEIGHT},setsar=1,fps={FRAME_RATE},"
+        f"format=yuv420p,trim=end_frame={frames}[card]"
     )
 
 

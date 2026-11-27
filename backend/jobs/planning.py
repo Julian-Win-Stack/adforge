@@ -141,9 +141,10 @@ action. Write that one action the way the page words it. If the page says someth
 happens while doing it, keep that part.
 """
 
-# How long the end card plays after the last scene (spec #401: at least 1.5 s). Its time
-# counts toward the ad's length: the default cap and the owner's target include it.
-END_CARD_SECONDS = 2
+# How long the end card plays after the last scene (spec #783: 3 s, long enough to read its
+# parts as they pop in). Its time counts toward the ad's length: the default cap and the
+# owner's target include it, so the spoken part gets what is left.
+END_CARD_SECONDS = 3
 # The voice words' pace rule, as the planner is told it. Only told, never refused (Julian,
 # Nov 9: the refusal never fired on a real plan).
 NEVER_SLOW = (

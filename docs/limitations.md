@@ -4,7 +4,7 @@ Things AdForge doesn't do yet, on purpose. Don't build these without Julian's go
 
 ## Can't do (told to the producer)
 
-- **Can't do:** Captions, on-screen words and end cards: fixed size/font/colours, always shown. End-card brand/line/price: fixed at planning. Offer keywords on-screen, spoken edits, brand colours through scene notes.
+- **Can't do:** Captions and on-screen words: fixed size/font/colours, always shown. End card: its parts can be sized, ordered and hidden, but nothing sets them yet (planner and producer tools are #786-#791). End-card brand/line/price: fixed at planning. Offer keywords on-screen, spoken edits, brand colours through scene notes.
 - **Can't do:** Two presenters or celebrities: one made-up presenter only.
 - **Can't do:** Silence or owner's song: app-made instrumental music only. Offer another mood.
 - **Can't do:** Logos or non-English. Offer the brand name on-screen.

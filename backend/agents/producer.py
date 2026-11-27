@@ -26,7 +26,7 @@ from jobs import (
     stale,
     work,
 )
-from jobs.assembly import AssemblyFailed, AssemblyTimedOut, website_of
+from jobs.assembly import AssemblyFailed, AssemblyTimedOut
 from jobs.library import library_of
 from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
@@ -76,6 +76,7 @@ from jobs.work import (
     create_person,
     drawn_for,
     edit_scene_place,
+    end_card_parts,
     go_back,
     go_back_is_free,
     keep_page,
@@ -2248,12 +2249,13 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
             "music, then assemble the ad."
         )
     scene_clips = [_clip_and_transcript(scene) for scene in scenes]
-    # An ad made from the same clips, overlays, music and end card would be this one again.
-    # One made before end cards has none, so it is made again with one.
+    # An ad made from the same clips, overlays, music and end card would be this one again:
+    # anything on the card, its accent colour included, makes a new one (spec #783). One
+    # made before end cards were parts has none to compare, so it is made again.
     made_from = [
         (clip.pk, scene.overlay) for scene, (clip, _) in zip(scenes, scene_clips, strict=True)
     ]
-    card = _end_card_text(job)
+    card = end_card_parts(job).record()
     # One made before clips were cut after their last word (#442) keeps that silence, so it
     # is made again.
     kept_to = [
@@ -2270,7 +2272,7 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
             and [cut["clip_end"] for cut in ad.cuts] == kept_to
             and ad.made_from_id == music.pk
             and ad.end_card is not None
-            and _end_card_text_of(ad.end_card) == card
+            and ad.end_card.get("card") == card
         ):
             _show(session, ad, made_for)
             return ad, True
@@ -2297,24 +2299,6 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
         ) from failed
     _show(session, ad, made_for)
     return ad, False
-
-
-def _end_card_text(job: Job) -> tuple[str, ...]:
-    """What `job`'s end card would say now: its name, line, price and website."""
-    return tuple(
-        " ".join(text.split())
-        for text in (
-            job.product_name,
-            job.end_card_line,
-            job.end_card_price,
-            website_of(job.product_url),
-        )
-    )
-
-
-def _end_card_text_of(card: dict[str, Any]) -> tuple[str, ...]:
-    """What a finished ad's kept end card says: its name, line, price and website."""
-    return tuple(card[part] for part in ("name", "line", "price", "website"))
 
 
 def _last_line(said: str) -> str:

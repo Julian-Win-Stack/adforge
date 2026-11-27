@@ -31,9 +31,10 @@ from .planning import (
     overlay_of_a_few_words,
 )
 
-# A script fits its target when its whole clips run no more than this much over it. Shorter
-# always fits.
-LENGTH_ALLOWANCE_SECONDS = 2
+# A script fits its target when its whole clips and the end card run no more than this much
+# over it. Shorter always fits. 3 seconds, so three scenes of the shortest clips (5 s each)
+# and the 3-second end card still fit a 15-second target, as they did with a 2-second card.
+LENGTH_ALLOWANCE_SECONDS = 3
 DEFAULT_AD_SECONDS = 30
 DEFAULT_AD_MAX_SECONDS = 35
 # Maximum fact rewrites or script shortenings before a producer handback or a longer ad.

@@ -555,7 +555,7 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         ("broll", "The close view inside the mug cannot be shown at arm's length."),
         ("talking", ""),
     ]
-    # 15 seconds and the 2 allowed over, less the end card's 2 seconds and 1.6 seconds for
+    # 15 seconds and the 3 allowed over, less the end card's 3 seconds and 1.6 seconds for
     # each of the 4 clips, at 2.8 words a second.
     assert handoffs("shorten_script")[0]["most_words"] == 24
 

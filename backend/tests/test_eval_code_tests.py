@@ -37,7 +37,7 @@ def test_a_finished_ad_passes_both_tests_and_the_command_says_why(
 
     out = capsys.readouterr().out
     assert f"{session_id} [TBT]: demo floor pass: demo scene 2 (B-roll); the ending pass" in out
-    assert 'the ending pass (pass: end card held 2.00 s; pass: "Kiln & Co" said in scene 1)' in out
+    assert 'the ending pass (pass: end card held 3.00 s; pass: "Kiln & Co" said in scene 1)' in out
     assert "demo floor: 1/1 pass" in out
     assert "the ending: 1/1 pass" in out
 

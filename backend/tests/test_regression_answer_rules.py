@@ -88,5 +88,5 @@ def test_lengths_use_the_app_plan_estimate_and_the_measured_finished_file() -> N
     assert rules.plan_length(["one " * 25], 3)["verdict"] == "fail"
     assert rules.finished_length(35.0, None)["verdict"] == "pass"
     assert rules.finished_length(35.01, None)["verdict"] == "fail"
-    assert rules.finished_length(22.0, 20)["verdict"] == "pass"
-    assert rules.finished_length(22.01, 20)["verdict"] == "fail"
+    assert rules.finished_length(23.0, 20)["verdict"] == "pass"
+    assert rules.finished_length(23.01, 20)["verdict"] == "fail"
