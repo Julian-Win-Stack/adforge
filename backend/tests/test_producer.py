@@ -295,6 +295,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "see_page",
         "add_to_library",
         "cant_use_owner_files",
+        "plan_product_shots",
         "plan_ad",
         "create_person",
         "remake_person",

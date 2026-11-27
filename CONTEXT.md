@@ -91,9 +91,17 @@ _Avoid_: Version, copy, alternative
 One window of a scene agent's work, opened by the producer's instruction and the owner's checked quotes, with its own caps on starting-picture tries, end-picture tries and clips. It ends when a clip passes, the agent gives up or its clips run out. A later note opens another run in the same chat.
 _Avoid_: Session, fix, try
 
+**Ad style**:
+How a job's ad is made: **person talking** (the default: a presenter speaks one line per scene) or **product shots** (silent scenes of the product, overlays and music, no presenter). The shop owner reads only those two labels.
+_Avoid_: Hero, format, template, mode
+
 **Scene**:
-One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll.
+One part of a job's ad and everything produced for it. A person-talking ad's scene is one spoken line, of kind talking or B-roll; a product-shots ad's scene is a **silent scene**.
 _Avoid_: Shot, beat, clip, segment
+
+**Silent scene**:
+A product-shots ad's scene: what it shows, the product photo it starts from, a slow camera move, an optional overlay and its length in seconds. No presenter, no spoken line, no voice. A scene agent makes it like any scene.
+_Avoid_: Product shot, hero shot, B-roll
 
 **Talking scene**:
 A scene in which the presenter speaks to camera, face in frame, while showing, using or showing the result of the product. The first scene is always talking. Each names a **Talking style** and a **Product state**.
@@ -104,7 +112,7 @@ A scene showing the product with any part of the presenter's body but never her 
 _Avoid_: Cutaway, product shot, insert
 
 **Scene kind**:
-Talking or B-roll, chosen explicitly for each scene. Middle scenes are B-roll by default, and every ad of two or more scenes has at least one B-roll scene.
+Talking or B-roll in a person-talking ad, chosen explicitly for each scene; every scene of a product-shots ad is silent. Middle scenes are B-roll by default, and every ad of two or more scenes has at least one B-roll scene.
 _Avoid_: Type, has face, reading the kind from the action
 
 **Talking style**:

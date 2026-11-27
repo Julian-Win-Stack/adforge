@@ -484,3 +484,97 @@ def video_prompt(
         sound,
     ]
     return " ".join(filter(None, parts))
+
+
+# A silent scene's camera move (product-shots ads, #770): between its starting picture and a
+# crop of it, so the product can't drift.
+CameraMove = Literal["push in", "pull back"]
+
+
+class SilentPictureForm(BaseModel):
+    """A silent scene's AI-made starting picture, box by box. Code puts each picked photo's
+    job first, joins your boxes in this order and adds the fixed ending; the picture is drawn
+    tall. Write "not needed here" for a box that doesn't apply."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    setting: str = Field(
+        description="Where the product is and what is around it, matching the product's "
+        'style. A made-up example: "on smooth pale stone beside a sunlit window".'
+    )
+    product: str = Field(
+        description="How the product sits in the frame: whole, large, which side to camera, "
+        "held or worn if the plan says so."
+    )
+    light: str = Field(description="Where the light comes from and how it falls on the product.")
+    framing: str = Field(description='The framing, such as "close-up, product fills the middle".')
+    anything_else: str = Field(description='Anything else the picture needs, or "not needed here".')
+
+
+SILENT_PICTURE_OPENING = "A tall vertical product photograph for a premium ad, with no presenter."
+SILENT_PICTURE_ENDING = (
+    f"Draw the product exactly as the photos show it. {PRODUCT_DESIGN_LINE} No text, no logo, "
+    "no watermark."
+)
+
+
+def silent_picture_prompt(form: SilentPictureForm, picture_jobs: Sequence[str]) -> str:
+    """Jobs are already labelled in the same order as the pictures being sent."""
+    boxes = (form.setting, form.product, form.light, form.framing, form.anything_else)
+    return " ".join(
+        [
+            SILENT_PICTURE_OPENING,
+            *filter(None, map(_box, picture_jobs)),
+            *filter(None, map(_box, boxes)),
+            SILENT_PICTURE_ENDING,
+        ]
+    )
+
+
+class SilentVideoForm(BaseModel):
+    """A silent scene's clip prompt, box by box. Code adds the speed, first-frame and camera
+    lines, keeps everything else still and asks for no sound."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    frame_shows: str = Field(description="What the starting picture shows, in plain words.")
+    product: str = Field(description="The product in one phrase: colour, material and shape.")
+    light: str = Field(
+        description="How light moves over the product during the move, such as a slow soft "
+        'sweep of light across the stone, or "not needed here".'
+    )
+    lock_line: str = Field(
+        description='Last: "The [product] keeps its exact shape, colour and details." After a '
+        "failed clip it grows: every part that must keep its shape."
+    )
+
+
+SILENT_CAMERA: dict[str, str] = {
+    "push in": "Only the camera moves: a slow, smooth push in from the whole frame to a close "
+    "view of the detail in the last frame.",
+    "pull back": "Only the camera moves: a slow, smooth pull back from a close view of the "
+    "product to the whole frame of the last frame.",
+}
+SILENT_STILL = (
+    "The product and everything around it stay exactly where they are; nothing turns, swings, "
+    "opens or lifts."
+)
+SILENT_SOUND = "Sound: none. No speech, no voices, no music."
+
+
+def silent_video_prompt(form: SilentVideoForm, move: CameraMove) -> str:
+    return " ".join(
+        filter(
+            None,
+            [
+                "Film this in real-time speed.",
+                "Movement starts from the very first frame, never a still opening.",
+                "Premium vertical product video, close-up.",
+                _box(form.frame_shows),
+                _box(form.product),
+                SILENT_CAMERA[move],
+                _box(form.light),
+                SILENT_STILL,
+                _box(form.lock_line),
+                SILENT_SOUND,
+            ],
+        )
+    )

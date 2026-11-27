@@ -14,9 +14,10 @@ from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, owner_checks, owner_parts, work
-from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
+from jobs.models import AgentFix, ProducedItem, Scene, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
 from jobs.presenter_words import presenter_words
+from jobs.product_shots import is_silent
 
 from . import lifecycle, media
 from .change_scene import SNAPSHOT, ChangeScene
@@ -29,6 +30,7 @@ from .instructions import INSTRUCTIONS, instructions_for
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 from .make_end_picture import MakeEndPicture
+from .silent import SILENT_INSTRUCTIONS, DrawSilentPicture, FilmSilent, scene_facts
 
 PENDING_NOTE_DELIVERED = SceneAgentRun.PENDING_DELIVERED
 AGENT = "scene_agent"
@@ -44,7 +46,24 @@ TOOLS: list[type[loop.Tool]] = [
     GiveUp,
     HandBack,
 ]
-AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
+# A silent scene's agent (a product-shots ad's scene, #770) has its own tools.
+SILENT_TOOLS: list[type[loop.Tool]] = [
+    LookAtLibrary,
+    LookAtTry,
+    DrawSilentPicture,
+    FilmSilent,
+    GiveUp,
+]
+AGENT_SPEC = loop.Agent(
+    name=AGENT,
+    purpose=PURPOSE,
+    instructions=INSTRUCTIONS,
+    tools=[*TOOLS, DrawSilentPicture, FilmSilent],
+)
+
+
+def _tools_for(scene: Scene) -> list[type[loop.Tool]]:
+    return SILENT_TOOLS if is_silent(scene) else TOOLS
 
 
 def current_run(fixing: AgentFix) -> SceneAgentRun:
@@ -133,8 +152,10 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     step = fixing.step
     step.scene.refresh_from_db()
     job = step.scene.job
-    clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
     scenes = list(job.scenes.order_by("number"))
+    if is_silent(step.scene):
+        return _silent_conversation(fixing, scenes)
+    clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
     plan = "\n".join(
         media._scene_facts(each, last=each is scenes[-1] and len(scenes) > 1) for each in scenes
     )
@@ -174,8 +195,27 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     how_to = media.how_to_shown(step.scene)
     if how_to is not None:
         happened.append(how_to)
+    happened.extend(_runs_so_far(step.scene))
+    # Trim tool pictures while preserving the shared and how-to pictures at the beginning.
+    at_start = 1 + (shared is not None) + (how_to is not None)
+    shared_part = happened[:at_start]
+    how_to_count = len(how_to.pictures) if how_to is not None else 0
+    return [
+        *shared_part,
+        *media._fit(
+            happened[len(shared_part) :],
+            reserved=(1 if shared is not None else 0) + how_to_count,
+            library_reserved=how_to_count,
+        ),
+    ]
+
+
+def _runs_so_far(scene: Scene) -> list[Happened]:
+    """Every run of the scene's agent so far, in order: each run's instruction, the owner's
+    checked words and photos, and every tool call the agent made in it."""
+    happened: list[Happened] = []
     # Each record is a window on this same scene conversation, rebuilt from checkpoints.
-    records = AgentFix.objects.filter(step__scene=step.scene, is_scene_agent=True).order_by(
+    records = AgentFix.objects.filter(step__scene=scene, is_scene_agent=True).order_by(
         "created_at", "pk"
     )
     for record in records:
@@ -183,7 +223,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
 
         def add_window(window: SceneAgentRun) -> None:
             happened.append(Said(by="user", text=f"Producer's instruction: {window.instruction}"))
-            owner_check = owner_checks.context_for(step.scene, window.quotes)
+            owner_check = owner_checks.context_for(scene, window.quotes)
             if owner_check:
                 happened.append(Said(by="user", text=owner_check))
             if window.quotes:
@@ -228,17 +268,27 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         happened.extend(media._said(said, None))
         for window in windows:
             add_window(window)
-    # Trim tool pictures while preserving the shared and how-to pictures at the beginning.
-    at_start = 1 + (shared is not None) + (how_to is not None)
-    shared_part = happened[:at_start]
-    how_to_count = len(how_to.pictures) if how_to is not None else 0
+    return happened
+
+
+def _silent_conversation(fixing: AgentFix, scenes: list[Scene]) -> list[Happened]:
+    """A silent scene's conversation: the page, the product-shots plan, then every run so far."""
+    scene = fixing.step.scene
+    job = scene.job
+    story = job.shots_plan
+    intro = "\n\n".join(
+        [
+            f"The ad is for this product page: {job.product_url}",
+            f"You own scene {scene.number}.",
+            f"The ad's story: {story['story']} Built on: {story['built_on']}",
+            media._library_words(job),
+            "The whole plan:\n" + "\n".join(scene_facts(each) for each in scenes),
+            f"The page's words:\n{job.page_text}",
+        ]
+    )
     return [
-        *shared_part,
-        *media._fit(
-            happened[len(shared_part) :],
-            reserved=(1 if shared is not None else 0) + how_to_count,
-            library_reserved=how_to_count,
-        ),
+        Said(by="user", text=intro),
+        *media._fit(_runs_so_far(scene), reserved=0, library_reserved=0),
     ]
 
 
@@ -320,11 +370,13 @@ def run(step: SceneStep) -> ProducedItem | None:
                 session=step.tool_call.session,
                 job=step.scene.job,
                 purpose=PURPOSE,
-                instructions=instructions_for(step.scene),
+                instructions=SILENT_INSTRUCTIONS
+                if is_silent(step.scene)
+                else instructions_for(step.scene),
                 conversation=_conversation(fixing),
                 tools=[
                     presenter_words(step.scene.job.person_gender).tool(tool.spec())
-                    for tool in TOOLS
+                    for tool in _tools_for(step.scene)
                 ],
                 since=fixing.created_at,
                 done=f"scene {step.scene.number}'s agent carried on",
