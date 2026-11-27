@@ -22,6 +22,8 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 # #621 adds the actionable refusal of an owner's presenter photo.
 # #628 tells the owner to try another product after required work stays safety blocked.
 # #664 shows drawn parts and automatic scene recovery as information, without a question.
+# #768 tells the owner that a plan card they answered was replaced, and #780 that no photo
+# shows the product option they chose.
 # Check failures and outages remain developer-only.
 FOR_THE_OWNER = {
     "page_unreadable",
@@ -46,6 +48,8 @@ FOR_THE_OWNER = {
     "face_swap_failed",
     "no_presenter_to_swap",
     "target_length_kept",
+    "plan_card_replaced",
+    "product_option_without_photo",
 }
 
 
