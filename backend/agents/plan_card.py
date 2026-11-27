@@ -22,9 +22,10 @@ from .models import ToolCall
 
 # The ad styles a plan can name, and the label the shop owner reads for each. Never "hero".
 STYLE_LABELS = {"person_talking": "Person talking", "product_shots": "Product shots"}
-# The styles the app can make today, so the only ones a card may offer (spec #768). Product
-# shots join once their ads can be made (#770).
-STYLES_OFFERED = ("person_talking",)
+# The styles the app can make, so the only ones a card may offer (spec #768).
+STYLES_OFFERED = ("person_talking", "product_shots")
+# The tool that plans each style's ad.
+PLANNED_WITH = {"person_talking": "plan_ad", "product_shots": "plan_product_shots"}
 # Where each style's length starts, in seconds; the producer may move it for the product.
 STARTING_SECONDS = {"person_talking": 20, "product_shots": 15}
 # The longest ad a plan may promise: 30 seconds when the shop owner asks, and a little over.
@@ -498,7 +499,7 @@ def for_producer(card: PlanCard) -> str:
         f"[The shop owner answered the plan card. The plan: “{plan['title']}”, style "
         f"{plan['style']}, {plan['seconds']} seconds; built on: {plan['built_on']} Opens: "
         f"{plan['opens']} The doubt it answers: {plan['doubt']}{also} Plan the ad from it "
-        "now.]"
+        f"now with {PLANNED_WITH[plan['style']]}.]"
     )
 
 
@@ -537,7 +538,10 @@ class TakeOwnersIdea(Plan, Tool):
         job.chosen_plan = {**job.chosen_plan, "plan": plan.model_dump()}
         job.target_seconds = self.seconds
         job.save(update_fields=["chosen_plan", "target_seconds"])
-        return f"Their idea is the plan: “{self.title}”, {self.seconds} seconds. Plan the ad now."
+        return (
+            f"Their idea is the plan: “{self.title}”, {self.seconds} seconds. Plan the ad now "
+            f"with {PLANNED_WITH[self.style]}."
+        )
 
 
 def _styles_rule() -> str:

@@ -132,6 +132,7 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
     (Job, "product_options"),
     (PlanCard, "card"),
     (PlanCard, "answer"),
+    (Job, "shots_plan"),
     (Job, "warnings"),
     (LibraryItem, "source"),
     (LibraryItem, "cut_out"),
@@ -151,6 +152,7 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
             "fact_problems",
             "owner_words",
             "shortened_from",
+            "silent",
         )
     ),
     (SceneAgentRun, "scene_before"),

@@ -2467,6 +2467,11 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
             f"scene {unchecked.number}'s line hasn't passed the fact check, and nothing is made "
             "until every line has. Run the planning checks first."
         )
+    from . import product_shots
+
+    if product_shots.is_product_shots(job):
+        # Silent scenes have no line to fit; their lengths were checked when planned.
+        return None
     words_per_second = FIXED_WORDS_PER_SECOND
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
@@ -4220,7 +4225,7 @@ def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
     from the written line."""
     if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
         raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
-    seconds = h3_clip_seconds(len(step.line.split()))
+    seconds = sent.seconds or h3_clip_seconds(len(step.line.split()))
     videos = dict(step.scene.job.videos.values_list("position", "file"))
     if sent.mode == "start_frame":
         return BrollClipHandoff(

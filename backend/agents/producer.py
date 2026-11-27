@@ -23,6 +23,7 @@ from jobs import (
     page,
     plan_edits,
     product_options,
+    product_shots,
     scene_references,
     stale,
     work,
@@ -125,6 +126,7 @@ from .money import dollars
 from .plan_card import ShowPlanCard, TakeOwnersIdea
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
+from .shots_tools import PlanProductShots
 
 LEGACY_FIXING_AGENT = "fixing_agent"
 
@@ -148,8 +150,23 @@ PASTE_IN_THE_PANEL = (
 # What the shop owner is told when a page is read while the page panel is open.
 PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
 
+# The product-shots style (spec #767): in this ticket only when the shop owner asks for it.
+PRODUCT_SHOTS_RULES = """\
+Two ad styles. The shop owner reads only the labels "Product shots" and "Person talking"; \
+never call them anything else. "Person talking", the ad described below, is the default. \
+"Product shots" is tall silent scenes of the product with no presenter, no spoken line and \
+no voice: overlays carry the words, music plays, and the end card is last. Make product \
+shots only when the shop owner asks for them in any message.
+For product shots, write the scenes yourself with plan_product_shots: build the story on \
+the listing's most unusual selling point, and write every overlay in the page's or the \
+owner's own words. Then run_planning_checks, create_music in the plan's mood, and \
+start_scene_agent for every scene together. No person is created for product shots. The \
+rules below about the person, lines, talking and B-roll scenes are for person-talking ads."""
+
 INSTRUCTIONS = (
     OWNER_WORDS_RULE
+    + "\n"
+    + PRODUCT_SHOTS_RULES
     + "\n"
     + """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
@@ -694,6 +711,11 @@ class PlanAd(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = _with_its_page(call, "the ad is planned from it")
+        if product_shots.is_product_shots(job):
+            raise Refused(
+                "this ad is product shots: change its plan with plan_product_shots. A "
+                "product-shots ad isn't switched to person talking yet."
+            )
         if job.scenes.exists():
             planned = job.model_calls.filter(
                 purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
@@ -789,6 +811,11 @@ class CreatePerson(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
+        if product_shots.is_product_shots(job):
+            raise Refused(
+                "a product-shots ad has no presenter, so no person is made for it. Run the "
+                "planning checks, make the music, then start every scene."
+            )
         portrait = create_person(job)
         if not _shown_before(call.session, portrait.file):
             messages.add(
@@ -1084,6 +1111,8 @@ class RunPlanningChecks(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
+        if product_shots.is_product_shots(job):
+            return _overlays_checked(job)
         try:
             problem = run_checks(job)
         except LineTooShort as short:
@@ -1115,6 +1144,23 @@ class RunPlanningChecks(Tool):
         return "\n".join([text, _script(job)])
 
 
+def _overlays_checked(job: Job) -> str:
+    """The planning checks of a product-shots ad: its overlays and end card against the page.
+    Its scenes have no spoken line, so no line is fitted to a clip or the target."""
+    failed = product_shots.check_overlays(job)
+    if failed is None:
+        return (
+            "The checks passed: every overlay and the end card match the page or what the "
+            "shop owner said. Next: create_music, then start every scene together."
+        )
+    post_notice(job, notices.PLANNING_CHECK_HANDED_BACK, failed, Message.Level.PROBLEM)
+    return (
+        f"{failed} Plan the ad again with plan_product_shots, the overlay or end card in the "
+        "page's or the shop owner's own words (nothing is made yet), then run the planning "
+        "checks again. Do not ask the shop owner."
+    )
+
+
 class CreateMusic(Tool):
     """Create the ad's background music, in the mood you give, as long as the person's voice
     takes to say the script with a few seconds to spare. It is always instrumental. It isn't
@@ -1139,6 +1185,8 @@ class CreateMusic(Tool):
             raise Refused(not_passed)
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job)
+        if product_shots.is_product_shots(job):
+            prompt, seconds = product_shots.music_prompt(mood), product_shots.music_seconds(job)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
         music = made.order_by("version").last()
         cost = dollars(_spent_on_music(job, prompt, seconds))
@@ -1642,6 +1690,8 @@ class EditScene(_SceneFields):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_planned_scene(call, self.scene)
+        if product_shots.is_silent(scene):
+            return _edit_silent_scene(scene, self._fields())
         try:
             edited = plan_edits.edit_scene(
                 scene,
@@ -1656,6 +1706,33 @@ class EditScene(_SceneFields):
         return _plan_edited(scene.job, edited)
 
 
+def _edit_silent_scene(scene: Scene, fields: dict[str, Any]) -> str:
+    """edit_scene on a silent scene: only its overlay and what it shows change."""
+    changes = {field: value for field, value in fields.items() if value is not None}
+    others = sorted(set(changes) - set(product_shots.SILENT_EDITABLE))
+    if others:
+        raise Refused(
+            f"a silent scene's overlay and what it shows can change, not its {', '.join(others)}. "
+            "For anything else, plan the ad again with plan_product_shots."
+        )
+    try:
+        changed = product_shots.edit_silent_scene(scene, changes)
+    except plan_edits.CantEdit as cant:
+        raise Refused(str(cant)) from None
+    if not changed:
+        return f"Scene {scene.number} already is as asked, so nothing was changed."
+    refilm = (
+        " Its starting picture and clip are out of date: once the checks pass, send its agent "
+        "the change with pass_note."
+        if "shows" in changed
+        else " The overlay is drawn when the ad is put together, so nothing is filmed again."
+    )
+    return (
+        f"Scene {scene.number}'s {' and '.join(changed)} changed. Run the planning checks "
+        f"before making anything.{refilm}"
+    )
+
+
 class AddScene(_SceneFields):
     """Add a scene to the plan at the number you give, the scenes from there on moved one
     later. It has nothing made yet: run the planning checks on it, then make its steps."""
@@ -1667,6 +1744,10 @@ class AddScene(_SceneFields):
 
     def run(self, call: ToolCall) -> str:
         job = _a_planned_job(call)
+        if product_shots.is_product_shots(job):
+            raise Refused(
+                "a product-shots ad gets a new scene by planning it again with plan_product_shots."
+            )
         if not self.line:
             raise Refused("a new scene needs its line: what the person says in it.")
         try:
@@ -2760,6 +2841,7 @@ PRODUCER = Agent(
         CantUseOwnerFiles,
         ShowPlanCard,
         TakeOwnersIdea,
+        PlanProductShots,
         PlanAd,
         CreatePerson,
         RemakePerson,

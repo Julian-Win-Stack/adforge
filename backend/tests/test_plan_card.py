@@ -126,15 +126,15 @@ def test_a_producer_that_plans_before_the_card_is_refused_and_then_shows_the_car
         ({"plans": PLANS[:2]}, "it has 2 plans, and a card has exactly 3"),
         ({"plans_pick": 4}, "the plans' pick is 4"),
         (
-            {"plans": [a_plan("Shine", style="product_shots", seconds=15), *PLANS[1:]]},
-            'plan 1 is "product_shots", which the app can\'t make yet',
+            {"plans": [a_plan("Shine", seconds=40), *PLANS[1:]]},
+            "plan 1 is 40 seconds, and a plan is 1 to 35.",
         ),
         (
             {"other": {"asks": "Which colour?", "choices": ["Red"], "pick": 1}},
             "the other question has 1 choices",
         ),
     ],
-    ids=["two plans", "pick out of range", "a style the app can't make", "one choice"],
+    ids=["two plans", "pick out of range", "too long", "one choice"],
 )
 def test_a_card_that_cant_be_shown_is_refused_with_what_to_fix(
     change: dict[str, Any],
@@ -656,3 +656,39 @@ def test_an_idea_for_an_option_no_photo_shows_cant_be_taken(
     # The new card waits for a new answer.
     assert Job.objects.get().chosen_plan is None
     assert not Job.objects.get().scenes.exists()
+
+
+SHOTS_PLAN: dict[str, Any] = {
+    "story": "The mug from every side.",
+    "built_on": "It is hand-thrown.",
+    "scenes": [{"shows": "The mug.", "photo": 1, "move": "push in", "overlay": "", "seconds": 4}],
+    "music_mood": "calm piano",
+    "product_name": "Stoneware Mug",
+    "product_colour": "green",
+    "end_card_line": "Hand-thrown.",
+    "end_card_price": "",
+}
+
+
+def test_a_product_shots_plan_is_locked_till_answered_and_then_planned_with_its_own_tool(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    shots = {**CARD, "plans": [a_plan("Shine", style="product_shots", seconds=15), *PLANS[1:]]}
+    producer.fake_model.respond("check_page", READABLE)
+    producer.told(
+        f"Make an ad for {product_page_url}",
+        ("read_page", {"link": product_page_url, "target_seconds": None, "why": "To start."}),
+        ("plan_product_shots", {**SHOTS_PLAN, "why": "Too soon."}),
+        turn(calls=[("show_plan_card", {**shots, "why": "The page is read."})]),
+    )
+    [refused] = results_of("plan_product_shots")
+    assert plan_card.LOCKED in refused
+    card = _the_card(api, session_id)
+    assert card["questions"][0]["choices"][0]["style"] == "Product shots"
+    producer.fake_model.respond("produce", turn(says="On it."))
+
+    _answer(api, session_id, card["id"], use_picks=True)
+
+    assert _chosen()["plan"]["style"] == "product_shots"
+    assert Job.objects.get().target_seconds == 15
+    assert "Plan the ad from it now with plan_product_shots." in str(given_to_the_producer(4))

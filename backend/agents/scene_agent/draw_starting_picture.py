@@ -10,7 +10,14 @@ from pydantic import BaseModel, Field
 from agents import hard_list
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
-from agents.scene_forms import EditForm, PictureForm, edit_prompt, picture_prompt
+from agents.scene_forms import (
+    EditForm,
+    PictureForm,
+    SilentPictureForm,
+    edit_prompt,
+    picture_prompt,
+    silent_picture_prompt,
+)
 from chat import messages
 from chat.models import Attachment, Message
 from gateway.gateway import edit_picture
@@ -29,6 +36,7 @@ from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.presenter_words import presenter_words
+from jobs.product_shots import is_silent
 from jobs.recolour import recolour
 
 from . import lifecycle, media, page_views, product_logo
@@ -55,7 +63,7 @@ class DrawStartingPicture(PictureForm, Tool):
 
 def make_picture(
     call: ToolCall,
-    form: PictureForm | EditForm,
+    form: PictureForm | EditForm | SilentPictureForm,
     picks: list[Pick],
     editing: ProducedItem | None = None,
 ) -> ToolResult:
@@ -127,7 +135,8 @@ def make_picture(
         )
     # The shared place's pictures go last, after the product photos and page views.
     place: list[tuple[str, str]] = []
-    if editing is None:
+    # A silent scene has no presenter and no shared place: it is drawn from the photos alone.
+    if editing is None and not is_silent(scene):
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
@@ -169,11 +178,12 @@ def make_picture(
             prompt = str(previous.handoff["prompt"])
             logo_record = previous.handoff.get("details", {}).get("logo")
         else:
-            prompt = (
-                edit_prompt(form, jobs)
-                if isinstance(form, EditForm)
-                else picture_prompt(form, jobs)
-            )
+            if isinstance(form, EditForm):
+                prompt = edit_prompt(form, jobs)
+            elif isinstance(form, SilentPictureForm):
+                prompt = silent_picture_prompt(form, jobs)
+            else:
+                prompt = picture_prompt(form, jobs)
             keys = ([editing.file] if editing else []) + [p.file for p in photos]
             logo = product_logo.describe(
                 call,

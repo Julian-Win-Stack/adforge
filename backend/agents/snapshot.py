@@ -14,6 +14,7 @@ from chat.models import Session
 from jobs import work
 from jobs.library import PictureRef, SentList, sent_list_of
 from jobs.models import Job, Scene, SceneStep
+from jobs.product_shots import is_silent
 
 from .loop import TOTAL_COST
 from .money import cost_of, dollars
@@ -32,7 +33,8 @@ def ad_as_it_stands(session: Session) -> str:
     if job is None or not job.scenes.exists():
         return ""
     scenes = list(job.scenes.order_by("number"))
-    lines = [AD_AS_IT_STANDS, f"The plan: {len(scenes)} scenes."]
+    style = job.get_ad_style_display().lower()
+    lines = [AD_AS_IT_STANDS, f"The plan ({style}): {len(scenes)} scenes."]
     lines += [_planned(scene) for scene in scenes]
     for scene in scenes:
         lines.append(f"Scene {scene.number}: {_versions(scene)} It cost {dollars(_cost(scene))}.")
@@ -62,6 +64,13 @@ def scene_in_full(scene: Scene) -> str:
 
 
 def _planned(scene: Scene) -> str:
+    if is_silent(scene):
+        plan = scene.silent or {}
+        return (
+            f"{scene.number}. [silent, {plan.get('seconds')} s, from library item "
+            f"{plan.get('photo')}, {plan.get('move')}] Shows: {scene.shows}"
+            + (f' Overlay: "{scene.overlay}".' if scene.overlay else "")
+        )
     return (
         f"{scene.number}. {scene.line}"
         + (f" (Shows, while the voice says it: {scene.shows})" if scene.shows else "")

@@ -9,6 +9,7 @@ from agents.models import ToolCall
 from chat.models import Message
 from jobs import notices, plan_edits, work
 from jobs.models import AgentFix, Scene, SceneAgentRun, SceneStep
+from jobs.product_shots import is_silent
 
 RETRY = "producer_recovery"
 TALKING = "talking_recovery"
@@ -93,7 +94,8 @@ def finish_recovery(step: SceneStep) -> bool:
         return False
     scene = step.scene
     number = scene.number
-    if talking:
+    # A silent scene has no line to say over other footage: after the extra try it is left out.
+    if talking or is_silent(scene):
         # Preserve paid work and records while excluding the unfilmable scene from assembly.
         Scene.objects.filter(pk=scene.pk).update(removed_at=timezone.now())
         plan_edits._move_chat_scenes(scene.job, {number: None})

@@ -76,7 +76,7 @@ class Film(Tool):
     )
 
     def run(self, call: ToolCall) -> ToolResult:
-        from . import current_run, finish
+        from . import current_run
 
         assert call.agent_fix is not None
         fixing = call.agent_fix
@@ -239,24 +239,7 @@ class Film(Tool):
                 ],
             )
             with transaction.atomic():
-                step = lifecycle._try_step(
-                    fixing,
-                    call,
-                    SceneStep.Kind.CLIP,
-                    picture=picture,
-                    motion_prompt=prompt,
-                )
-                row = AgentFixTry.objects.create(
-                    agent_fix=fixing,
-                    number=fixing.tries.count() + 1,
-                    tool_call=call,
-                    step=step,
-                    picture=picture,
-                    scene_row=lifecycle._row(scene),
-                    video_prompt=prompt,
-                    sent=sent.model_dump(mode="json"),
-                )
-                SceneAgentRun.objects.filter(pk=window.pk).update(clips=F("clips") + 1)
+                row = submit_try(fixing, call, window, picture, prompt, sent)
                 if end_picture is not None and (end_picture.ruling or {}).get("status") == "failed":
                     notices.post_notice(
                         scene.job,
@@ -266,48 +249,7 @@ class Film(Tool):
                         f"(try {row.number}).",
                         Message.Level.PROBLEM,
                     )
-        assert row.step is not None and row.sent is not None
-        step = row.step
-        sent = library.SentList.model_validate(row.sent)
-        assert sent.scene_run is not None
-        window = SceneAgentRun.objects.get(pk=sent.scene_run)
-        if row.clip is None:
-            try:
-                clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
-                    step, motion=row.video_prompt, sent=sent
-                )
-            except Exception as error:
-                # A render that failed, whatever stopped it, used up its try: the last one ends
-                # the run by the cap, as a last try that failed its check does.
-                _end_by_the_cap_after_its_last_try(fixing, window)
-                if not isinstance(error, ClipFailed):
-                    raise
-                if sent.end_picture is not None:
-                    text = f"H3 refused scene {scene.number}'s clip with an end picture: {error}"
-                    notices.post_notice(
-                        scene.job, notices.END_PICTURE_CLIP_REFUSED, text, Message.Level.PROBLEM
-                    )
-                    raise Refused(text) from error
-                raise
-            ProducedItem.objects.filter(pk=clip.pk).update(
-                remake=row.number, change=window.instruction
-            )
-            clip.refresh_from_db()
-            transcript = work.transcribe_clip(step, clip)
-            if settings.QUALITY_CHECKS:
-                if transcript is not None:
-                    clip_words.trim_leading_words(step, clip, transcript)
-                if "verdict" not in (clip.ruling or {}):
-                    work._judge_clip(step, clip)
-                    clip.refresh_from_db()
-            if transcript is not None:
-                clip_words.record_pace(step, clip, transcript)
-            row.clip = clip
-            row.save(update_fields=["clip"])
-            lifecycle._done(step)
-        # Recompute saved tries from the clip judge, ignoring retired check verdicts.
-        row.passed = lifecycle.passes(row)
-        row.save(update_fields=["passed"])
+        window = render_try(fixing, row, transcribe=True)
         if self.closest_picture is not None:
             # Record it only once the clip exists, including after checkpoint recovery.
             text = (
@@ -325,30 +267,119 @@ class Film(Tool):
                     notices.post_notice(
                         locked, notices.CLOSEST_PICTURE_FILMED, text, Message.Level.PROBLEM
                     )
-        with transaction.atomic():
-            Job.objects.select_for_update().get(pk=scene.job_id)
-            # An in-flight clip belongs to the window that submitted it. A newer note
-            # stays active, including when this old clip passed or used its last try.
-            if current_run(fixing).pk != window.pk:
-                return lifecycle._told(fixing, row)
-            if row.passed:
-                AgentFix.objects.filter(pk=fixing.pk).update(
-                    passed=row.clip, finished_at=timezone.now()
+        return close_try(fixing, row, window)
+
+
+def submit_try(
+    fixing: AgentFix,
+    call: ToolCall,
+    window: SceneAgentRun,
+    picture: ProducedItem,
+    prompt: str,
+    sent: library.SentList,
+) -> AgentFixTry:
+    """Keep a new clip try of `window` before it is paid for: its clip step, its row and one
+    more of the run's clips used."""
+    with transaction.atomic():
+        step = lifecycle._try_step(
+            fixing,
+            call,
+            SceneStep.Kind.CLIP,
+            picture=picture,
+            motion_prompt=prompt,
+        )
+        row = AgentFixTry.objects.create(
+            agent_fix=fixing,
+            number=fixing.tries.count() + 1,
+            tool_call=call,
+            step=step,
+            picture=picture,
+            scene_row=lifecycle._row(fixing.step.scene),
+            video_prompt=prompt,
+            sent=sent.model_dump(mode="json"),
+        )
+        SceneAgentRun.objects.filter(pk=window.pk).update(clips=F("clips") + 1)
+    return row
+
+
+def render_try(fixing: AgentFix, row: AgentFixTry, *, transcribe: bool) -> SceneAgentRun:
+    """Make the try's clip, or take the one already made, and have it judged; with
+    `transcribe`, its spoken words are read too. Whether it passes is kept on the row. Gives
+    back the run that submitted it."""
+    scene = fixing.step.scene
+    assert row.step is not None and row.sent is not None
+    step = row.step
+    sent = library.SentList.model_validate(row.sent)
+    assert sent.scene_run is not None
+    window = SceneAgentRun.objects.get(pk=sent.scene_run)
+    if row.clip is None:
+        try:
+            clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
+                step, motion=row.video_prompt, sent=sent
+            )
+        except Exception as error:
+            # A render that failed, whatever stopped it, used up its try: the last one ends
+            # the run by the cap, as a last try that failed its check does.
+            _end_by_the_cap_after_its_last_try(fixing, window)
+            if not isinstance(error, ClipFailed):
+                raise
+            if sent.end_picture is not None:
+                text = f"H3 refused scene {scene.number}'s clip with an end picture: {error}"
+                notices.post_notice(
+                    scene.job, notices.END_PICTURE_CLIP_REFUSED, text, Message.Level.PROBLEM
                 )
-                SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
-                assert row.clip is not None
-                work.finish_with_clip(scene, row.clip)
-            elif lifecycle.clips_used_up(window):
-                fixing.ended_by_cap = True
-                fixing.save(update_fields=["ended_by_cap"])
-                finish(fixing, lifecycle.ENDED_BY_CAP)
-            else:
-                told = lifecycle._told(fixing, row)
-                step_five = lifecycle.talking_step(window)
-                if step_five:
-                    return ToolResult(f"{told.text}\n{step_five}", told.pictures)
-                return told
-        return lifecycle._told(fixing, row)
+                raise Refused(text) from error
+            raise
+        ProducedItem.objects.filter(pk=clip.pk).update(remake=row.number, change=window.instruction)
+        clip.refresh_from_db()
+        transcript = work.transcribe_clip(step, clip) if transcribe else None
+        if settings.QUALITY_CHECKS:
+            if transcript is not None:
+                clip_words.trim_leading_words(step, clip, transcript)
+            if "verdict" not in (clip.ruling or {}):
+                work._judge_clip(step, clip)
+                clip.refresh_from_db()
+        if transcript is not None:
+            clip_words.record_pace(step, clip, transcript)
+        row.clip = clip
+        row.save(update_fields=["clip"])
+        lifecycle._done(step)
+    # Recompute saved tries from the clip judge, ignoring retired check verdicts.
+    row.passed = lifecycle.passes(row)
+    row.save(update_fields=["passed"])
+    return window
+
+
+def close_try(fixing: AgentFix, row: AgentFixTry, window: SceneAgentRun) -> ToolResult:
+    """Under the job's lock: a passing try finishes the scene, a failed last try ends the run
+    by the cap; what the agent is told about the try."""
+    from . import current_run, finish
+
+    scene = fixing.step.scene
+    with transaction.atomic():
+        Job.objects.select_for_update().get(pk=scene.job_id)
+        # An in-flight clip belongs to the window that submitted it. A newer note
+        # stays active, including when this old clip passed or used its last try.
+        if current_run(fixing).pk != window.pk:
+            return lifecycle._told(fixing, row)
+        if row.passed:
+            AgentFix.objects.filter(pk=fixing.pk).update(
+                passed=row.clip, finished_at=timezone.now()
+            )
+            SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
+            assert row.clip is not None
+            work.finish_with_clip(scene, row.clip)
+        elif lifecycle.clips_used_up(window):
+            fixing.ended_by_cap = True
+            fixing.save(update_fields=["ended_by_cap"])
+            finish(fixing, lifecycle.ENDED_BY_CAP)
+        else:
+            told = lifecycle._told(fixing, row)
+            step_five = lifecycle.talking_step(window)
+            if step_five:
+                return ToolResult(f"{told.text}\n{step_five}", told.pictures)
+            return told
+    return lifecycle._told(fixing, row)
 
 
 def _note_a_judge_failed_pair(
