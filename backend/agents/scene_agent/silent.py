@@ -248,15 +248,20 @@ def _failed_real_photos(scene: Scene) -> int:
 
 
 def _switched_after(scene: Scene, answer: ToolResult) -> ToolResult:
-    """`answer`, replayed after a worker stop, still telling the agent when its picture's
-    failure switched the scene to an AI scene."""
+    """`answer`, replayed after a worker stop, still switching the scene to an AI scene, or
+    telling the agent it was switched, when its picture's failure used up the photo's tries."""
     scene.refresh_from_db(fields=["silent"])
     if starts_on(scene) == REAL_PHOTO:
-        return answer
-    return ToolResult(
-        text=f"{answer.text}\nThe scene is an AI scene now: draw it with draw_silent_picture.",
-        pictures=answer.pictures,
-    )
+        if _failed_real_photos(scene) < REAL_PHOTO_TRIES:
+            return answer
+        switch = str(
+            _drawn_instead(
+                scene, int((scene.silent or {})["photo"]), "its picture failed its check twice"
+            )
+        )
+    else:
+        switch = "The scene is an AI scene now: draw it with draw_silent_picture."
+    return ToolResult(text=f"{answer.text}\n{switch}", pictures=answer.pictures)
 
 
 def _drawn_instead(scene: Scene, photo: int, why: str) -> Refused:
