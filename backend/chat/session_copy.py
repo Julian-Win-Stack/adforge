@@ -133,6 +133,7 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
     (PlanCard, "card"),
     (PlanCard, "answer"),
     (Job, "shots_plan"),
+    (Job, "style_choice"),
     (Job, "warnings"),
     (LibraryItem, "source"),
     (LibraryItem, "cut_out"),

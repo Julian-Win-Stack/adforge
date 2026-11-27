@@ -164,7 +164,13 @@ class ShowPlanCard(Tool):
             return f"it has {len(self.plans)} plans, and a card has exactly 3."
         if not 1 <= self.plans_pick <= 3:
             return f"the plans' pick is {self.plans_pick}, and it is the number of a plan, 1 to 3."
+        pinned = job.session.pinned_ad_style if job.session is not None else ""
         for number, plan in enumerate(self.plans, start=1):
+            if pinned and plan.style != pinned:
+                return (
+                    f'plan {number} is "{plan.style}", but this chat makes "{pinned}" ads only: '
+                    "every plan is that style."
+                )
             if plan.style not in STYLES_OFFERED:
                 offered = " or ".join(f'"{style}"' for style in STYLES_OFFERED)
                 return (
@@ -410,6 +416,7 @@ def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Me
         elif job.chosen_plan["plan"] is not None:
             job.target_seconds = job.chosen_plan["plan"]["seconds"]
             fields.append("target_seconds")
+            fields += _take_the_style(job, job.chosen_plan["plan"], card)
         job.save(update_fields=fields)
         said = "\n".join(_said(question, picked) for question in questions)
         if choices is None:
@@ -503,6 +510,32 @@ def for_producer(card: PlanCard) -> str:
     )
 
 
+def _take_the_style(job: Job, plan: dict[str, Any], card: PlanCard | None) -> list[str]:
+    """Make the chosen `plan`'s style the ad's style (#774), its doubt the one chosen among
+    the doubts `card`'s plans answer, and give the job's fields it changed (not saved). A
+    product-shots plan of the other style goes with the change."""
+    doubts = [
+        each["doubt"]
+        for question in (card.card["questions"] if card is not None else [])
+        if question["key"] == "plan"
+        for each in question["choices"]
+    ]
+    fields = ["ad_style", "style_choice"]
+    if job.ad_style != plan["style"]:
+        job.shots_plan = {}
+        fields.append("shots_plan")
+    job.ad_style = plan["style"]
+    job.style_choice = {
+        "doubts": doubts or [plan["doubt"]],
+        "chosen": plan["doubt"],
+        "style": plan["style"],
+        "why": plan["built_on"],
+        "owner_asked": False,
+        "from": "plan card",
+    }
+    return fields
+
+
 def waits_for_a_plan(job: Job) -> bool:
     """Whether the job has no chosen plan yet: no card answered, or one answered with the
     shop owner's idea that the producer hasn't made the plan yet."""
@@ -537,7 +570,9 @@ class TakeOwnersIdea(Plan, Tool):
         plan = Plan.model_validate(self.model_dump(include=set(Plan.model_fields)))
         job.chosen_plan = {**job.chosen_plan, "plan": plan.model_dump()}
         job.target_seconds = self.seconds
-        job.save(update_fields=["chosen_plan", "target_seconds"])
+        card = job.plan_cards.exclude(answered_at=None).last()
+        styled = _take_the_style(job, job.chosen_plan["plan"], card)
+        job.save(update_fields=["chosen_plan", "target_seconds", *styled])
         return (
             f"Their idea is the plan: “{self.title}”, {self.seconds} seconds. Plan the ad now "
             f"with {PLANNED_WITH[self.style]}."

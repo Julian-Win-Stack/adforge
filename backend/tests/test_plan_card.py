@@ -690,5 +690,28 @@ def test_a_product_shots_plan_is_locked_till_answered_and_then_planned_with_its_
     _answer(api, session_id, card["id"], use_picks=True)
 
     assert _chosen()["plan"]["style"] == "product_shots"
-    assert Job.objects.get().target_seconds == 15
+    job = Job.objects.get()
+    assert job.target_seconds == 15
+    # The chosen plan's style is the ad's style, its doubt the one chosen (#774).
+    assert job.ad_style == "product_shots"
+    assert job.style_choice["chosen"] == "Can I trust it?"
+    assert job.style_choice["from"] == "plan card"
     assert "Plan the ad from it now with plan_product_shots." in str(given_to_the_producer(4))
+
+
+def test_a_pinned_chat_takes_only_plans_of_its_style(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    from chat.models import Session
+
+    Session.objects.filter(pk=session_id).update(pinned_ad_style="person_talking")
+    shots = {**CARD, "plans": [a_plan("Shine", style="product_shots", seconds=15), *PLANS[1:]]}
+    _card_shown(
+        producer,
+        product_page_url,
+        turn(calls=[("show_plan_card", {**CARD, "why": "Pinned."})]),
+        card=shots,
+    )
+
+    assert 'this chat makes "person_talking" ads only' in results_of("show_plan_card")[0]
+    assert _the_card(api, session_id)["questions"][0]["choices"][0]["style"] == "Person talking"

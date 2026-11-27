@@ -107,6 +107,10 @@ _Avoid_: Variant, version, SKU
 How a job's ad is made: **person talking** (the default: a presenter speaks one line per scene) or **product shots** (silent scenes of the product, overlays and music, no presenter). The shop owner reads only those two labels.
 _Avoid_: Hero, format, template, mode
 
+**Buyer's doubt**:
+What a first-time buyer wonders before buying this product, such as "is it beautiful, do I want it?" or "can I trust it, is it worth it?". The producer names 2 or 3 after reading the page and takes the **ad style** that answers the one that matters most, unless the shop owner asked for a style.
+_Avoid_: Objection, pain point
+
 **Scene**:
 One part of a job's ad and everything produced for it. A person-talking ad's scene is one spoken line, of kind talking or B-roll; a product-shots ad's scene is a **silent scene**.
 _Avoid_: Shot, beat, clip, segment

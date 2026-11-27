@@ -126,7 +126,7 @@ from .money import dollars
 from .plan_card import ShowPlanCard, TakeOwnersIdea
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
-from .shots_tools import PlanProductShots
+from .shots_tools import ChooseAdStyle, PlanProductShots
 
 LEGACY_FIXING_AGENT = "fixing_agent"
 
@@ -150,13 +150,18 @@ PASTE_IN_THE_PANEL = (
 # What the shop owner is told when a page is read while the page panel is open.
 PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
 
-# The product-shots style (spec #767): in this ticket only when the shop owner asks for it.
+# The two ad styles and how the producer chooses between them (spec #767, #774).
 PRODUCT_SHOTS_RULES = """\
 Two ad styles. The shop owner reads only the labels "Product shots" and "Person talking"; \
-never call them anything else. "Person talking", the ad described below, is the default. \
-"Product shots" is tall silent scenes of the product with no presenter, no spoken line and \
-no voice: overlays carry the words, music plays, and the end card is last. Make product \
-shots only when the shop owner asks for them in any message.
+never call them anything else. "Person talking" is the ad described below. "Product shots" \
+is tall silent scenes of the product with no presenter, no spoken line and no voice: \
+overlays carry the words, music plays, and the end card is last.
+Each plan on the plan card takes the style of the buyer's doubt it answers. "Is it \
+beautiful, do I want it?" is product shots; "can I trust it, is it worth it?" is person \
+talking; "how big is it, how does it look on me?" is a worn scene or a size reference inside \
+either style. A style the owner asked for in any message is the style of every plan. Demo \
+ads are not offered. The style of the plan the owner picks is the ad's style, set for you; \
+call choose_ad_style only when they ask for another style after answering the card.
 For product shots, write the scenes yourself with plan_product_shots: build the story on \
 the listing's most unusual selling point, and write every overlay in the page's or the \
 owner's own words. Then run_planning_checks, create_music in the plan's mood, and \
@@ -713,8 +718,8 @@ class PlanAd(Tool):
         job = _with_its_page(call, "the ad is planned from it")
         if product_shots.is_product_shots(job):
             raise Refused(
-                "this ad is product shots: change its plan with plan_product_shots. A "
-                "product-shots ad isn't switched to person talking yet."
+                'the ad\'s style is "Product shots": plan it with plan_product_shots, or '
+                'choose "person talking" with choose_ad_style first.'
             )
         if job.scenes.exists():
             planned = job.model_calls.filter(
@@ -2841,6 +2846,7 @@ PRODUCER = Agent(
         CantUseOwnerFiles,
         ShowPlanCard,
         TakeOwnersIdea,
+        ChooseAdStyle,
         PlanProductShots,
         PlanAd,
         CreatePerson,

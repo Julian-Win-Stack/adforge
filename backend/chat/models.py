@@ -3,6 +3,8 @@ import uuid
 from django.db import models
 from django.db.models.functions import Lower
 
+from jobs.models import AdStyle
+
 
 class Folder(models.Model):
     """A named place in the sidebar the user files sessions into, as one per test round.
@@ -39,6 +41,16 @@ class Session(models.Model):
         on_delete=models.SET_NULL,
         related_name="sessions",
         help_text="Where the user filed it in the sidebar. Blank for none.",
+    )
+    pinned_ad_style = models.CharField(
+        max_length=20,
+        choices=AdStyle.choices,
+        blank=True,
+        default="",
+        db_default="",
+        help_text="An ad style (jobs.models.AdStyle) every ad of this session is made in, "
+        "whatever the producer would choose: regression eval runs pin person talking so they "
+        "compare like with like. Blank lets the producer choose.",
     )
     # Both are only changed while holding the session row's lock, as messages are added.
     producer_running = models.BooleanField(
