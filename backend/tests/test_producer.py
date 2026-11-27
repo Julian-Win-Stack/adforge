@@ -303,6 +303,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "run_planning_checks",
         "create_music",
         "edit_scene",
+        "shorten_owner_line",
         "add_scene",
         "remove_scene",
         "reorder_scenes",
