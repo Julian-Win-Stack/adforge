@@ -661,3 +661,140 @@ def test_a_gif_or_see_through_photo_is_drawn_flat_on_white(format: str, tmp_path
 def test_a_file_that_isnt_a_picture_cant_go_on_the_end_card() -> None:
     with pytest.raises(ValueError, match="can't be read as a picture"):
         assembly.flat_photo(b"not a picture")
+
+
+def caption(start: float, end: float) -> assembly.Caption:
+    return assembly.Caption("words", start, end)
+
+
+def test_the_voice_is_heard_where_its_words_are_timed_and_short_pauses_join_its_parts() -> None:
+    cuts = [
+        a_cut(1, picture=(0, 5, 0, 5)),
+        a_cut(2, picture=(0, 4, 5, 9)),
+        a_cut(3, picture=(0, 3, 9, 12)),
+        a_cut(4, picture=(0, 2, 12, 14)),
+    ]
+    drawn = [
+        caption(0.1, 1.5),
+        # A breath between two groups of words: too short for the music to rise.
+        caption(1.5 + assembly.MUSIC_RISES_AFTER_SECONDS - 0.1, 4.2),
+        # A real pause between scenes.
+        caption(5.8, 8.4),
+    ]
+
+    # Scene 3 has sound but no timed words, so all of it may be voice; scene 4 is silent.
+    speech = assembly.speech_times(cuts, drawn, sounded=[True, True, True, False])
+
+    assert speech == [(0.1, 4.2), (5.8, 8.4), (9, 12)]
+
+
+def test_the_music_rises_where_no_one_talks_and_dips_under_the_voice(tmp_path: Path) -> None:
+    parts = [
+        (clip(tmp_path, "scene-1", seconds=4), a_cut(1, picture=(0, 4, 0, 4))),
+        (clip(tmp_path, "scene-2", seconds=4), a_cut(2, picture=(0, 4, 4, 8))),
+    ]
+    card = a_card(start=8.0)
+    ad = tmp_path / "ad.mp4"
+    tune = music(tmp_path, seconds=8 + END_CARD_SECONDS)
+
+    assembly.join(
+        parts,
+        ad,
+        music=tune,
+        drawn=[
+            caption(0.0, 1.5),
+            # A breath shorter than the music waits for.
+            caption(1.8, 3.0),
+            # A pause of 2 s between the lines, across the cut between the scenes.
+            caption(5.0, 7.9),
+        ],
+        end_card=card,
+    )
+
+    heard = ad.read_bytes()
+    alone = loudness(tune.read_bytes(), "music", between=(1, 2))
+    under = loudness(heard, "music", between=(0.5, 1.4))
+    # Under the voice, the music plays a fifth as loud as it is, as it always has: 14 dB down.
+    assert under == pytest.approx(alone - 14, abs=1)
+    # Through the breath it stays down.
+    assert loudness(heard, "music", between=(1.55, 1.75)) == pytest.approx(under, abs=1.5)
+    # In the pause and on the end card it rises to near full: 0.9 of itself, 1 dB down.
+    rise = loudness(heard, "music", between=(3.8, 4.4))
+    assert rise == pytest.approx(alone - 1, abs=1)
+    assert loudness(heard, "music", between=(8.8, 8 + END_CARD_SECONDS - 0.2)) == pytest.approx(
+        alone - 1, abs=1
+    )
+    # It swells and dips smoothly, never at once: partway between the two halfway through.
+    swelling = loudness(heard, "music", between=(3.1, 3.3))
+    assert under + 4 < swelling < rise - 3
+    dipping = loudness(heard, "music", between=(4.88, 4.96))
+    assert under + 3 < dipping < rise - 3
+    # The voice is as loud as in its clip, and the ad as long as its picture.
+    assert loudness(heard, "voice", between=(5.5, 7.5)) == pytest.approx(
+        loudness(parts[0][0].read_bytes(), "voice", between=(1, 3)), abs=0.5
+    )
+    assert stream_seconds(ad, "a") == pytest.approx(8 + END_CARD_SECONDS, abs=0.05)
+    assert stream_seconds(ad, "v") == pytest.approx(8 + END_CARD_SECONDS, abs=0.05)
+
+
+def test_an_ad_no_one_talks_in_plays_its_music_near_full_throughout(tmp_path: Path) -> None:
+    silent = generate(tmp_path / "scene-1.mp4", "color=c=red:s=72x128:r=25", seconds=3)
+    ad = tmp_path / "ad.mp4"
+    # In stereo, as the ad's silence is: mono music would be spread over its two channels.
+    tune = generate(
+        tmp_path / "music.wav",
+        f"sine=frequency={MUSIC_HERTZ}:sample_rate=8000,aformat=channel_layouts=stereo",
+        seconds=3,
+    )
+
+    assembly.join([(silent, one_scene(3.0))], ad, music=tune, drawn=[])
+
+    assert loudness(ad.read_bytes(), "music", between=(0.2, 2.8)) == pytest.approx(
+        loudness(tune.read_bytes(), "music", between=(0.2, 2.8)) - 1, abs=1
+    )
+
+
+def test_words_the_voice_says_beyond_its_script_keep_the_music_down() -> None:
+    # The voice adds "Seriously, grab it" after a pause: the script, and so its captions,
+    # lack the words, but the clip's sound is kept to the last of them.
+    cut = a_cut(1, picture=(0.5, 4.0, 0.0, 3.5))
+    heard = [
+        {"text": "Get", "start": 0.6, "end": 1.0},
+        {"text": "it", "start": 1.0, "end": 1.8},
+        {"text": "Seriously,", "start": 2.6, "end": 3.0},
+        {"text": "grab", "start": 3.0, "end": 3.2},
+        {"text": "it", "start": 3.2, "end": 3.4},
+    ]
+
+    speech = assembly.speech_times([cut], [caption(0.1, 1.3)], sounded=[True], heard=[heard])
+
+    # Timed from the clip's start, 0.5 s of which was cut away.
+    assert speech == [(0.1, 1.3), (2.1, 2.9)]
+
+
+def test_the_mix_never_clips_when_the_music_swells_as_a_loud_voice_ends(tmp_path: Path) -> None:
+    loud_voice = generate(
+        tmp_path / "scene-1.mp4",
+        "color=c=red:s=72x128:r=25",
+        # Near full scale: ffmpeg's sine source plays at an eighth of it.
+        f"aevalsrc=0.99*sin(2*PI*{VOICE_HERTZ}*t):s=8000",
+        seconds=3,
+    )
+    loud_music = generate(
+        tmp_path / "music.wav", f"aevalsrc=sin(2*PI*{MUSIC_HERTZ}*t):s=8000", seconds=3
+    )
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join([(loud_voice, one_scene(3.0))], ad, music=loud_music, drawn=[caption(0.0, 1.5)])
+
+    # Decoded as the player hears it, the loudest sample stays under full scale.
+    peak = subprocess.run(
+        [settings.FFMPEG, "-i", str(ad), "-af", "astats=measure_overall=Peak_level"]
+        + ["-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    ).stderr
+    levels = [float(row.rsplit(" ", 1)[-1]) for row in peak.splitlines() if "Peak level dB" in row]
+    assert levels and max(levels) < 0

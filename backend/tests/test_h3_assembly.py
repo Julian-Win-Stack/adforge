@@ -155,6 +155,15 @@ def test_the_chat_assembles_clips_and_written_captions(
     assert loudness(data, "music", between=(2, 3)) == pytest.approx(
         loudness(music_path.read_bytes(), "music", between=(2, 3)) - 14, abs=1
     )
+    # Where no one talks, the music rises to near full, 0.9 of itself, 1 dB down: on the end
+    # card, and in the pause of over a second between the lines, unless scene 2's words have
+    # no times, when all of its clip may be voice.
+    alone = loudness(music_path.read_bytes(), "music", between=(2, 3)) - 1
+    assert loudness(data, "music", between=(11.6, 10.8 + END_CARD_SECONDS)) == pytest.approx(
+        alone, abs=1
+    )
+    pause = loudness(data, "music", between=(5.3, 5.7))
+    assert pause == pytest.approx(alone - 13 if missing_transcript else alone, abs=1)
     assert (
         "each clip with its own sound, up to 0.5 seconds after its last word"
         in results_of("assemble_ad")[-1]

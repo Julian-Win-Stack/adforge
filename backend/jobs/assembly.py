@@ -20,6 +20,25 @@ from django.conf import settings
 # the voice is clearly heard over it. Fixed, the same for every ad.
 MUSIC_VOLUME = 0.2
 
+# How loud the music plays where no one talks, as edited ads raise it between lines and on
+# the end card (#795): near full, about 1 dB down, the level of music playing alone.
+MUSIC_ALONE_VOLUME = 0.9
+
+# The music rises only in a pause of at least this long: not between words, at a breath, or
+# in a quick gap between two lines, where it would pump up and down.
+MUSIC_RISES_AFTER_SECONDS = 0.5
+
+# The music dips over this long, ending as the voice starts, and swells back over this long
+# once it stops: smooth, never a jump. It dips faster, so the first word is never covered.
+MUSIC_DIP_SECONDS = 0.2
+MUSIC_SWELL_SECONDS = 0.5
+
+# The finished mix is held under this peak, as music swelling while the voice ends could
+# otherwise sum past full scale and clip. Only such peaks are touched. 1 dB below full
+# scale, the usual room left for the AAC encoder, whose output overshoots its input's peaks
+# a little (a mix held at 0.98 came out 0.4 dB over full scale).
+MIX_PEAK = 0.89
+
 # Music that runs out before the ad ends fades out over this long rather than stopping dead.
 MUSIC_FADE_SECONDS = 2
 
@@ -541,11 +560,84 @@ def has_sound(media: Path) -> bool:
     return bool(json.loads(probed)["streams"])
 
 
-def music_filters(music_seconds: float, ad_seconds: float) -> str:
-    """How the music is fitted under the ad: turned down to MUSIC_VOLUME, and cut to the
-    ad's length when it is longer, or faded out over its last MUSIC_FADE_SECONDS when it
-    runs out before the ad ends."""
-    fitted = [f"volume={MUSIC_VOLUME}"]
+def speech_times(
+    cuts: Sequence[Cut],
+    drawn: Sequence[Caption],
+    *,
+    sounded: Sequence[bool],
+    heard: Sequence[Sequence[Mapping[str, Any]]] = (),
+) -> list[tuple[float, float]]:
+    """When someone talks in the ad, in seconds, in order. In each cut: while each word
+    `heard` in its clip is said (one list for each cut, timed from the clip's start), as a
+    clip's voice may say words its script lacks, and its sound is kept to the last of them;
+    while each of its captions is said when none was heard with a time; and all through the
+    voice of a cut that has sound (`sounded`, one for each cut) but neither, as its words
+    weren't timed. Two times with a pause shorter than MUSIC_RISES_AFTER_SECONDS between
+    them are one."""
+    times: list[tuple[float, float]] = []
+    for number, (cut, sound) in enumerate(zip(cuts, sounded, strict=True)):
+        # A word's time is measured from the start of its clip, as captions() shifts it.
+        shift = cut.voice_start - cut.voice_clip_start
+        words = [
+            (
+                round(max(cut.voice_start, start + shift), 3),
+                round(min(cut.voice_end, end + shift), 3),
+            )
+            for word in (heard[number] if number < len(heard) else [])
+            for start, end in [(word.get("start"), word.get("end"))]
+            if isinstance(start, (int, float)) and isinstance(end, (int, float))
+        ]
+        words = [(start, end) for start, end in words if start < end]
+        captioned = [
+            (caption.start, caption.end)
+            for caption in drawn
+            if caption.start < cut.voice_end and caption.end > cut.voice_start
+        ]
+        if words:
+            times += words
+        elif captioned:
+            times += captioned
+        elif sound:
+            times.append((cut.voice_start, cut.voice_end))
+    times.sort()
+    joined: list[tuple[float, float]] = []
+    for start, end in times:
+        if joined and start - joined[-1][1] < MUSIC_RISES_AFTER_SECONDS:
+            joined[-1] = (joined[-1][0], max(joined[-1][1], end))
+        else:
+            joined.append((start, end))
+    return joined
+
+
+def music_level(speech: Sequence[tuple[float, float]]) -> str:
+    """How loud the music plays at each moment `t` of the ad, as an ffmpeg expression:
+    MUSIC_VOLUME while someone talks (`speech`), MUSIC_ALONE_VOLUME where no one does, dipping
+    over MUSIC_DIP_SECONDS before the voice starts and swelling over MUSIC_SWELL_SECONDS after
+    it stops."""
+    if not speech:
+        return str(MUSIC_ALONE_VOLUME)
+    # How far down the music is at `t` for each time someone talks: 1 while they do, 0 well
+    # before and after, in between on the way down and up.
+    down = [
+        f"clip(min((t-{start:.3f})/{MUSIC_DIP_SECONDS}+1,"
+        f"({end:.3f}-t)/{MUSIC_SWELL_SECONDS}+1),0,1)"
+        for start, end in speech
+    ]
+    deepest = down[0]
+    for more in down[1:]:
+        deepest = f"max({deepest},{more})"
+    return f"{MUSIC_ALONE_VOLUME}-{round(MUSIC_ALONE_VOLUME - MUSIC_VOLUME, 3)}*{deepest}"
+
+
+def music_filters(
+    music_seconds: float, ad_seconds: float, speech: Sequence[tuple[float, float]]
+) -> str:
+    """How the music is fitted under the ad: turned down under the voice and up where no one
+    talks, as music_level says, and cut to the ad's length when it is longer, or faded out
+    over its last MUSIC_FADE_SECONDS when it runs out before the ad ends."""
+    # The level is worked out for each 256 samples, a few milliseconds, so it changes
+    # smoothly rather than in steps as long as ffmpeg's usual blocks of sound.
+    fitted = ["asetnsamples=n=256", f"volume='{music_level(speech)}':eval=frame"]
     if music_seconds > ad_seconds:
         fitted.append(f"atrim=end={ad_seconds}")
     elif music_seconds < ad_seconds:
@@ -560,19 +652,22 @@ def join(
     *,
     music: Path,
     drawn: Sequence[Caption],
+    heard: Sequence[Sequence[Mapping[str, Any]]] = (),
     end_card: EndCard | None = None,
     photo: Path | None = None,
 ) -> None:
     """Cut each clip file to its part's picture and voice, join the pictures, in order, and
     the voices, in order, apart, as each plays at its own time, and put them together with
-    the music under the voice, the captions drawn along the bottom and each part's overlay
-    along the top, into the finished ad at `into`, ending on the `end_card`, if given, with
-    the product `photo` on it (a plain card without one), over the music alone. The ad lasts
-    as long as its picture."""
+    the music under the voice, risen where no one talks (see speech_times: the words `heard`
+    in each part's clip, one list for each part), the captions drawn
+    along the bottom and each part's overlay along the top, into the finished ad at `into`,
+    ending on the `end_card`, if given, with the product `photo` on it (a plain card without
+    one), over the music alone. The ad lasts as long as its picture."""
     inputs: list[str] = []
     filters: list[str] = []
     pictures: list[str] = []
     voices: list[str] = []
+    sounded: list[bool] = []
     for number, (clip, cut) in enumerate(parts):
         inputs += ["-i", str(clip)]
         # Each part's clock starts again from 0, so the parts play one after another, at the
@@ -597,7 +692,8 @@ def join(
         # after it still start on time; a clip with no sound at all plays silence for its
         # voice's time.
         voice_seconds = round(cut.voice_end - cut.voice_start, 3)
-        if has_sound(clip):
+        sounded.append(has_sound(clip))
+        if sounded[-1]:
             filters.append(
                 f"[{number}:a]atrim=start={cut.voice_clip_start}:end={cut.voice_clip_end},"
                 f"asetpts=PTS-STARTPTS,"
@@ -624,15 +720,20 @@ def join(
     music_input = len(parts) + (1 if end_card is not None and photo is not None else 0)
     inputs += ["-i", str(music)]
     ad_seconds = end_card.end if end_card is not None else parts[-1][1].end
-    filters.append(f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
+    speech = speech_times([cut for _, cut in parts], drawn, sounded=sounded, heard=heard)
+    filters.append(
+        f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds, speech)}[music]"
+    )
     # A picture that plays on past the last line plays over the music only. The voice is
     # padded without end and the mix cut at the ad's end: amix drops the voice it still holds
     # when the voice, its first input, ends while the longer music lags behind, which cut the
     # last line off about 1.2 s early in every graded test ad (08 Oct).
     filters.append("[said]apad[voice]")
-    # The ad lasts as long as its picture; the levels set above are kept, not evened out.
+    # The ad lasts as long as its picture; the levels set above are kept, not evened out, but
+    # for any peak over MIX_PEAK, held under it with no delay added and no level raised.
     filters.append(
-        f"[voice][music]amix=inputs=2:duration=first:normalize=0,atrim=end={ad_seconds}[a]"
+        f"[voice][music]amix=inputs=2:duration=first:normalize=0,"
+        f"alimiter=limit={MIX_PEAK}:level=0:latency=1,atrim=end={ad_seconds}[a]"
     )
     _ffmpeg(
         *inputs,
