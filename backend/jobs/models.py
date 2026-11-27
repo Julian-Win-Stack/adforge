@@ -9,6 +9,14 @@ from django.utils import timezone
 from .plan_rules import PlanScene
 
 
+class AdStyle(models.TextChoices):
+    """How a job's ad is made (Ad style, CONTEXT.md). The labels are what the shop owner
+    reads."""
+
+    PERSON_TALKING = "person_talking", "Person talking"
+    PRODUCT_SHOTS = "product_shots", "Product shots"
+
+
 class Job(models.Model):
     class Status(models.TextChoices):
         QUEUED = "queued"
@@ -215,6 +223,20 @@ class Job(models.Model):
         blank=True,
         help_text="The target and scene lines kept longer after automatic shortenings; "
         "a changed script must fit its target again.",
+    )
+    ad_style = models.CharField(
+        max_length=20,
+        choices=AdStyle.choices,
+        default=AdStyle.PERSON_TALKING,
+        db_default=AdStyle.PERSON_TALKING,
+        help_text="How the ad is made (Ad style, CONTEXT.md): a person talking to camera, the "
+        "default, or product shots, silent scenes of the product with music and overlays.",
+    )
+    shots_plan = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="A product-shots ad's plan beyond its scenes, as the producer wrote it: "
+        '{"story": ..., "built_on": ..., "music_mood": ...}. Empty for a person-talking ad.',
     )
     warnings = models.JSONField(
         default=list,
@@ -478,6 +500,8 @@ class Scene(models.Model):
     class Kind(models.TextChoices):
         TALKING = "talking"
         BROLL = "broll", "B-roll"
+        # A product-shots ad's scene: no presenter and no spoken line (Silent scene).
+        SILENT = "silent"
 
     class Status(models.TextChoices):
         PLANNED = "planned"
@@ -505,6 +529,13 @@ class Scene(models.Model):
         blank=True,
         help_text="What a B-roll scene shows, in plain words, while the person's voice says "
         "the line over it. Blank for a scene where the person talks to camera.",
+    )
+    silent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="A silent scene's plan beyond what it shows and its overlay: the library "
+        "number of the product photo it starts on, its camera move and its length in seconds, "
+        'such as {"photo": 2, "move": "push in", "seconds": 4.0}. Null for any other scene.',
     )
     overlay = models.TextField(
         blank=True,

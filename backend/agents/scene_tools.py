@@ -12,7 +12,7 @@ from agents.loop import Refused, Tool
 from agents.models import AskedChangeFiling, SystemNote, ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from chat.models import Message
-from jobs import notices, work
+from jobs import notices, product_shots, work
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
 
@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 class StartSceneAgent(Tool):
     """Start one scene's agent in the background, with the producer's instruction.
-    Both scene kinds need a checked line and a presenter."""
+    A talking or B-roll scene needs a checked line and a presenter; a silent scene needs its
+    checked overlay and the music."""
 
     name = "start_scene_agent"
     scene: int
@@ -39,15 +40,22 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
-        try:
-            h3_clip_seconds(len(scene.line.split()))
-        except ValueError as error:
-            raise Refused(
-                f"{error} Run the planning checks and get a shorter line before filming."
-            ) from error
+        silent = product_shots.is_silent(scene)
+        if not silent:
+            try:
+                h3_clip_seconds(len(scene.line.split()))
+            except ValueError as error:
+                raise Refused(
+                    f"{error} Run the planning checks and get a shorter line before filming."
+                ) from error
         if not self.instruction.strip():
             raise Refused("say what this scene must do in the producer's instruction.")
-        if work.latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
+        if silent and not product_shots.has_its_music(scene.job):
+            raise Refused(
+                "make the music for this plan first with create_music: a product-shots ad is "
+                "cut to it."
+            )
+        if not silent and work.latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused("the presenter hasn't been made yet. Create the person first.")
         for kind in (
             SceneStep.Kind.STARTING_PICTURE,
