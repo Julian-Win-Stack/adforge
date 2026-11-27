@@ -752,3 +752,49 @@ def test_an_ad_no_one_talks_in_plays_its_music_near_full_throughout(tmp_path: Pa
     assert loudness(ad.read_bytes(), "music", between=(0.2, 2.8)) == pytest.approx(
         loudness(tune.read_bytes(), "music", between=(0.2, 2.8)) - 1, abs=1
     )
+
+
+def test_words_the_voice_says_beyond_its_script_keep_the_music_down() -> None:
+    # The voice adds "Seriously, grab it" after a pause: the script, and so its captions,
+    # lack the words, but the clip's sound is kept to the last of them.
+    cut = a_cut(1, picture=(0.5, 4.0, 0.0, 3.5))
+    heard = [
+        {"text": "Get", "start": 0.6, "end": 1.0},
+        {"text": "it", "start": 1.0, "end": 1.8},
+        {"text": "Seriously,", "start": 2.6, "end": 3.0},
+        {"text": "grab", "start": 3.0, "end": 3.2},
+        {"text": "it", "start": 3.2, "end": 3.4},
+    ]
+
+    speech = assembly.speech_times([cut], [caption(0.1, 1.3)], sounded=[True], heard=[heard])
+
+    # Timed from the clip's start, 0.5 s of which was cut away.
+    assert speech == [(0.1, 1.3), (2.1, 2.9)]
+
+
+def test_the_mix_never_clips_when_the_music_swells_as_a_loud_voice_ends(tmp_path: Path) -> None:
+    loud_voice = generate(
+        tmp_path / "scene-1.mp4",
+        "color=c=red:s=72x128:r=25",
+        # Near full scale: ffmpeg's sine source plays at an eighth of it.
+        f"aevalsrc=0.99*sin(2*PI*{VOICE_HERTZ}*t):s=8000",
+        seconds=3,
+    )
+    loud_music = generate(
+        tmp_path / "music.wav", f"aevalsrc=sin(2*PI*{MUSIC_HERTZ}*t):s=8000", seconds=3
+    )
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join([(loud_voice, one_scene(3.0))], ad, music=loud_music, drawn=[caption(0.0, 1.5)])
+
+    # Decoded as the player hears it, the loudest sample stays under full scale.
+    peak = subprocess.run(
+        [settings.FFMPEG, "-i", str(ad), "-af", "astats=measure_overall=Peak_level"]
+        + ["-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    ).stderr
+    levels = [float(row.rsplit(" ", 1)[-1]) for row in peak.splitlines() if "Peak level dB" in row]
+    assert levels and max(levels) < 0

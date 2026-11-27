@@ -34,8 +34,10 @@ MUSIC_DIP_SECONDS = 0.2
 MUSIC_SWELL_SECONDS = 0.5
 
 # The finished mix is held under this peak, as music swelling while the voice ends could
-# otherwise sum past full scale and clip. Only such peaks are touched.
-MIX_PEAK = 0.98
+# otherwise sum past full scale and clip. Only such peaks are touched. 1 dB below full
+# scale, the usual room left for the AAC encoder, whose output overshoots its input's peaks
+# a little (a mix held at 0.98 came out 0.4 dB over full scale).
+MIX_PEAK = 0.89
 
 # Music that runs out before the ad ends fades out over this long rather than stopping dead.
 MUSIC_FADE_SECONDS = 2
@@ -559,23 +561,45 @@ def has_sound(media: Path) -> bool:
 
 
 def speech_times(
-    cuts: Sequence[Cut], drawn: Sequence[Caption], *, sounded: Sequence[bool]
+    cuts: Sequence[Cut],
+    drawn: Sequence[Caption],
+    *,
+    sounded: Sequence[bool],
+    heard: Sequence[Sequence[Mapping[str, Any]]] = (),
 ) -> list[tuple[float, float]]:
-    """When someone talks in the ad, in seconds, in order: while each caption's words are
-    said, and all through the voice of a cut that has sound (`sounded`, one for each cut)
-    but no caption, as its words weren't timed. Two times with a pause shorter than
-    MUSIC_RISES_AFTER_SECONDS between them are one."""
-    times = sorted(
-        [(caption.start, caption.end) for caption in drawn]
-        + [
-            (cut.voice_start, cut.voice_end)
-            for cut, sound in zip(cuts, sounded, strict=True)
-            if sound
-            and not any(
-                caption.start < cut.voice_end and caption.end > cut.voice_start for caption in drawn
+    """When someone talks in the ad, in seconds, in order. In each cut: while each word
+    `heard` in its clip is said (one list for each cut, timed from the clip's start), as a
+    clip's voice may say words its script lacks, and its sound is kept to the last of them;
+    while each of its captions is said when none was heard with a time; and all through the
+    voice of a cut that has sound (`sounded`, one for each cut) but neither, as its words
+    weren't timed. Two times with a pause shorter than MUSIC_RISES_AFTER_SECONDS between
+    them are one."""
+    times: list[tuple[float, float]] = []
+    for number, (cut, sound) in enumerate(zip(cuts, sounded, strict=True)):
+        # A word's time is measured from the start of its clip, as captions() shifts it.
+        shift = cut.voice_start - cut.voice_clip_start
+        words = [
+            (
+                round(max(cut.voice_start, start + shift), 3),
+                round(min(cut.voice_end, end + shift), 3),
             )
+            for word in (heard[number] if number < len(heard) else [])
+            for start, end in [(word.get("start"), word.get("end"))]
+            if isinstance(start, (int, float)) and isinstance(end, (int, float))
         ]
-    )
+        words = [(start, end) for start, end in words if start < end]
+        captioned = [
+            (caption.start, caption.end)
+            for caption in drawn
+            if caption.start < cut.voice_end and caption.end > cut.voice_start
+        ]
+        if words:
+            times += words
+        elif captioned:
+            times += captioned
+        elif sound:
+            times.append((cut.voice_start, cut.voice_end))
+    times.sort()
     joined: list[tuple[float, float]] = []
     for start, end in times:
         if joined and start - joined[-1][1] < MUSIC_RISES_AFTER_SECONDS:
@@ -628,12 +652,14 @@ def join(
     *,
     music: Path,
     drawn: Sequence[Caption],
+    heard: Sequence[Sequence[Mapping[str, Any]]] = (),
     end_card: EndCard | None = None,
     photo: Path | None = None,
 ) -> None:
     """Cut each clip file to its part's picture and voice, join the pictures, in order, and
     the voices, in order, apart, as each plays at its own time, and put them together with
-    the music under the voice, risen where no one talks (see music_level), the captions drawn
+    the music under the voice, risen where no one talks (see speech_times: the words `heard`
+    in each part's clip, one list for each part), the captions drawn
     along the bottom and each part's overlay along the top, into the finished ad at `into`,
     ending on the `end_card`, if given, with the product `photo` on it (a plain card without
     one), over the music alone. The ad lasts as long as its picture."""
@@ -694,7 +720,7 @@ def join(
     music_input = len(parts) + (1 if end_card is not None and photo is not None else 0)
     inputs += ["-i", str(music)]
     ad_seconds = end_card.end if end_card is not None else parts[-1][1].end
-    speech = speech_times([cut for _, cut in parts], drawn, sounded=sounded)
+    speech = speech_times([cut for _, cut in parts], drawn, sounded=sounded, heard=heard)
     filters.append(
         f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds, speech)}[music]"
     )

@@ -4986,7 +4986,15 @@ def assemble_ad(
                 on_the_card = Path(folder) / "end-card-photo.png"
                 on_the_card.write_bytes(flat)
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, ad, music=under, drawn=drawn, end_card=card, photo=on_the_card)
+        assembly.join(
+            parts,
+            ad,
+            music=under,
+            drawn=drawn,
+            heard=[transcript.words if transcript is not None else [] for _, transcript in scenes],
+            end_card=card,
+            photo=on_the_card,
+        )
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
