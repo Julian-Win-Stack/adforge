@@ -113,6 +113,12 @@ class PictureLabel(_Shape):
     target: str = Field(
         default="", description="For a line-up, the product's position in it; else empty."
     )
+    option: str = Field(
+        default="",
+        description="The product option it shows, as the page names it; empty when it shows "
+        "no single one (packaging, a size chart, every option together), so it is usable for "
+        "every option.",
+    )
     label: Sentence = Field(
         description="One sentence in the prompt's form, such as \"The lantern, its door "
         'open and its wick lit." Read by models only: code never parses it.'

@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator
 from gateway.gateway import IMAGE_TYPES
 from gateway.types import Handoff
 
-from . import colours
+from . import colours, product_options
 from .colours import NONE, entries, entry
 from .library import Alone, Kind, PictureLabel, Side
 from .models import Job
@@ -48,6 +48,12 @@ from them; empty for every other kind.
 - label: one sentence saying what the picture shows, as you would tell someone who can't see \
 it: the product, its state, what else is in it. For a before/after, say which part is before \
 and which is after."""
+
+# The picture's product option (#780): the picker's own field, and the labelling call's when
+# the page sells more than one option.
+OPTION_FIELD = """\
+- option: which of the product's options the picture shows, as the answer lists them; all \
+when it shows no single one: packaging, a size chart, a how-to, or several options together."""
 
 PICK_INSTRUCTIONS = f"""\
 You look at one shop's product page the way a shopper would, to pick out the product's own \
@@ -113,6 +119,10 @@ cut off or too small to recognise doesn't count.
 Then page_blocked: true when the screenshots show a block, error, login or "verify you're \
 human" page instead of the shop's product page.
 
+Then options: the versions of this product the shopper chooses between on this page \
+(stones, colours, sizes, scents, sets), in the page's own names, each once; empty when the \
+page sells one version only.
+
 Last, pictures: one entry for every picture you picked, in gallery_images, more_images or \
 record_images, each with these fields:
 - picture: its mark, "I<n>", or "R<n>" for an official photo.
@@ -120,6 +130,7 @@ record_images, each with these fields:
 or file, on the page or among the official photos. Every other photo gets a number of its own. \
 Pick every copy as usual; the group says they are one photo, and one copy is kept.
 {LABEL_FIELDS}
+{OPTION_FIELD}
 
 Three more kinds of picture come with the screenshots:
 
@@ -238,20 +249,31 @@ class PickedPicture(BaseModel):
         "other kind."
     )
     label: str = Field(description="One sentence saying what the picture shows.")
+    # Last, after every field the picker was tested with (#780).
+    option: str = Field(
+        default=product_options.ALL,
+        description='The product option it shows: one entry of options, or "all" when it '
+        "shows no single one.",
+    )
 
-    def label_of(self, colours: list[str]) -> PictureLabel:
-        """The picture's label as the library keeps it, its colour as an entry. Raises
-        ValueError when it breaks the library's rules, or names a colour that is neither one
-        of `colours`, the picker's list, nor none (a list it gave none of takes any)."""
+    def label_of(self, colours: list[str], options: list[str] | None = None) -> PictureLabel:
+        """The picture's label as the library keeps it, its colour as an entry and its
+        option as the page names it. Raises ValueError when it breaks the library's rules,
+        names a colour that is neither one of `colours`, the picker's list, nor none (a list
+        it gave none of takes any), or names an option not in `options` when there are two or
+        more (with fewer, every picture is of the one option)."""
         colour = entry(self.colour)
         if colours and colour not in [*colours, NONE]:
             raise ValueError(f"{self.colour!r} isn't one of the product's colours")
+        options = options or []
+        option = product_options.kept_as(self.option, options) if len(options) > 1 else ""
         return PictureLabel(
             kind=self.kind,
             side=self.side,
             alone=self.alone,
             colour=colour,
             target=self.target,
+            option=option,
             label=self.label,
         )
 
@@ -279,6 +301,12 @@ class PickedPhotos(BaseModel):
         description="The colours the shop sells this product in, in the page's own names when "
         "it has them, each once; one entry when it is sold in one colour.",
     )
+    # After the colours, before the pictures, whose options are entries of it (#780).
+    options: list[str] = Field(
+        default=[],
+        description="The versions of this product the shopper chooses between on this page, in "
+        "the page's own names, each once; empty when it sells one version only.",
+    )
     # Last, after every answer the picker was tested with: one entry per picture kept.
     pictures: list[PickedPicture] = []
 
@@ -286,6 +314,11 @@ class PickedPhotos(BaseModel):
     @classmethod
     def _as_entries(cls, colours: list[str]) -> list[str]:
         return entries(colours)
+
+    @field_validator("options")
+    @classmethod
+    def _as_names(cls, options: list[str]) -> list[str]:
+        return product_options.names(options)
 
 
 class FaceNoteHandoff(Handoff):
@@ -341,14 +374,17 @@ class PhotoLabel(BaseModel):
             raise ValueError("a line-up names its target, and nothing else has one")
         return self
 
-    def label_of(self) -> PictureLabel:
-        """The photo's label as the library keeps it, its colour as an entry."""
+    def label_of(self, options: list[str] | None = None) -> PictureLabel:
+        """The photo's label as the library keeps it, its colour as an entry and its option
+        as `options`, the job's, names it: asked only when there are two or more (#780)."""
+        answered = getattr(self, "option", product_options.ALL)
         return PictureLabel(
             kind=self.kind,
             side=self.side,
             alone=self.alone,
             colour=entry(self.colour),
             target=self.target,
+            option=product_options.kept_as(answered, options or []),
             label=self.label,
         )
 
@@ -360,14 +396,32 @@ COLOUR_ANSWERED = (
 )
 
 
+# The labelling call's option, held to the product's options (#780).
+OPTION_ANSWERED = (
+    'The product option the photo shows: one of the product\'s options, or "all" when it shows '
+    "no single one."
+)
+
+
 def photo_label_for(job: Job) -> type[PhotoLabel]:
     """The labelling call's answer for a photo of `job`'s product: its colour one of the
-    product's colours or none, by the answer's schema (colours.answer)."""
-    return create_model(
-        PhotoLabel.__name__,
-        __base__=PhotoLabel,
-        colour=(colours.answer(job, none=True), Field(description=COLOUR_ANSWERED)),
-    )
+    product's colours or none, by the answer's schema (colours.answer); and, when the page
+    sells two or more options, the option it shows, one of them or all."""
+    fields: dict[str, Any] = {
+        "colour": (colours.answer(job, none=True), Field(description=COLOUR_ANSWERED))
+    }
+    if product_options.offered(job):
+        fields["option"] = (product_options.answer(job), Field(description=OPTION_ANSWERED))
+    return create_model(PhotoLabel.__name__, __base__=PhotoLabel, **fields)
+
+
+def label_instructions(job: Job) -> str:
+    """The labelling call's instructions for a photo of `job`'s product: the option field
+    too when the page sells two or more options."""
+    if not product_options.offered(job):
+        return LABEL_INSTRUCTIONS
+    listed = ", ".join(job.product_options)
+    return f"{LABEL_INSTRUCTIONS}\n{OPTION_FIELD} The product's options: {listed}."
 
 
 def handoff(

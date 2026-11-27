@@ -99,6 +99,10 @@ _Avoid_: Brief, form, questionnaire
 One of the 3 ideas for the ad on a plan card: its style, length, title, what it is built on, how it opens, and the buyer's doubt it answers. Not the scene-by-scene plan, which is written only once the card is answered.
 _Avoid_: Option, concept
 
+**Product option**:
+One of the versions a page sells under one listing (two stones, four colours, three sizes), in the page's own names. A page with two or more gets a question on the plan card asking which the ad is for, and the ad is then offered only that option's photos and those that show no single one. Not a **Variant**, which is a job.
+_Avoid_: Variant, version, SKU
+
 **Scene**:
 One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll.
 _Avoid_: Shot, beat, clip, segment

@@ -26,6 +26,7 @@ from jobs import (
     library_items,
     library_sheets,
     notices,
+    product_options,
     scene_references,
 )
 from jobs.library import Moment
@@ -489,7 +490,8 @@ def how_to_items(scene: Scene) -> list[library.LibraryEntry]:
     """The library's how-to photos when `scene` uses the product; else none."""
     if not uses_product(scene):
         return []
-    return library_sheets.how_to_photos(library.library_of(scene.job))
+    usable = product_options.usable(scene.job, library.library_of(scene.job))
+    return library_sheets.how_to_photos(usable)
 
 
 def how_to_shown(scene: Scene) -> ToolUse | None:

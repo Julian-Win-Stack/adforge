@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from chat import messages
 from chat.models import Message, Session
-from jobs import notices
+from jobs import notices, product_options
 from jobs.models import Job, PlanCard
 
 from .loop import Refused, Tool
@@ -67,6 +67,23 @@ class Question(BaseModel):
     pick: int = Field(description="Your pick: the number of its choice, from 1.")
 
 
+class ProductOption(BaseModel):
+    """The question which product option the ad is for (#780)."""
+
+    asks: str = Field(description='The question, short, such as "Which stone?"')
+    options: list[str] = Field(
+        description="The options to choose from, each exactly as read_page listed the page's "
+        "product options."
+    )
+    all_of_them: str = Field(
+        description="One more choice for all the options together, worded for the product, "
+        'such as "Both stones", when showing them together makes sense; else "".'
+    )
+    pick: int = Field(
+        description="Your pick: the number of its choice, from 1, all_of_them counted last."
+    )
+
+
 class ShowPlanCard(Tool):
     """Show the shop owner the plan card, once the page is read and before anything is
     planned or made: 3 plans to pick from, and at most 2 more questions. Nothing is made until
@@ -81,9 +98,13 @@ class ShowPlanCard(Tool):
         "page and looked at its 8 photos. Here are 3 plans. Pick one, or tell me what you'd "
         'rather have."'
     )
-    product_option: Question | None = Field(
-        description="Which product option the ad is for, only when the page sells more than "
-        "one and the shop owner hasn't said which; otherwise null."
+    product_option: ProductOption | None = Field(
+        description="Which product option the ad is for, only when read_page listed two or "
+        "more and the shop owner hasn't said which; otherwise null."
+    )
+    option_named: str = Field(
+        description="The product option the shop owner already named in the chat, exactly as "
+        'read_page listed it, so the card doesn\'t ask; else "".'
     )
     plans: list[Plan] = Field(description="Exactly 3 plans.")
     plans_pick: int = Field(description="Your pick of the plans: its number, from 1.")
@@ -98,7 +119,7 @@ class ShowPlanCard(Tool):
             raise Refused("the product page hasn't been read yet, and the plans are made from it.")
         if not waits_for_a_plan(job) or job.scenes.exists():
             raise Refused("the plan card was already answered, and the ad is planned from it.")
-        problem = self._problem()
+        problem = self._problem(job)
         if problem is not None:
             notices.record(
                 call.session,
@@ -122,8 +143,11 @@ class ShowPlanCard(Tool):
             "it: their answer comes to you as their message. Stop here."
         )
 
-    def _problem(self) -> str | None:
+    def _problem(self, job: Job) -> str | None:
         """What makes the card one that can't be shown, or None."""
+        option_problem = self._option_problem(job)
+        if option_problem is not None:
+            return option_problem
         if len(self.plans) != 3:
             return f"it has {len(self.plans)} plans, and a card has exactly 3."
         if not 1 <= self.plans_pick <= 3:
@@ -141,23 +165,67 @@ class ShowPlanCard(Tool):
                 )
             if not all(text.strip() for text in (plan.title, plan.built_on, plan.opens)):
                 return f"plan {number} has no title, built-on or opening."
-        for name, question in (("product option", self.product_option), ("other", self.other)):
-            if question is None:
-                continue
-            if not 2 <= len(question.choices) <= 4:
-                return f"the {name} question has {len(question.choices)} choices; it takes 2 to 4."
-            if not 1 <= question.pick <= len(question.choices):
-                return f"the {name} question's pick isn't the number of one of its choices."
+        if self.other is not None:
+            if not 2 <= len(self.other.choices) <= 4:
+                return f"the other question has {len(self.other.choices)} choices; it takes 2 to 4."
+            if not 1 <= self.other.pick <= len(self.other.choices):
+                return "the other question's pick isn't the number of one of its choices."
         if not self.opening.strip():
             return "it has no opening sentence."
+        return None
+
+    def _option_problem(self, job: Job) -> str | None:
+        """What makes the card's product option wrong for the page's options, or None: a
+        page selling two or more asks which (or names the one the shop owner named), and a
+        page selling one never does."""
+        sold = job.product_options
+        if not product_options.offered(job):
+            if self.product_option is not None or self.option_named.strip():
+                return "the page sells one product option, so the card doesn't ask which."
+            return None
+        listed = "; ".join(sold)
+        if self.option_named.strip():
+            if self.product_option is not None:
+                return "the shop owner named their product option, so the card doesn't ask it."
+            if not product_options.named(job, self.option_named):
+                return f"\"{self.option_named}\" isn't one of the page's product options: {listed}."
+            return None
+        question = self.product_option
+        if question is None:
+            return (
+                f"the page sells {len(sold)} product options ({listed}): ask which one the ad "
+                "is for in product_option, or give option_named when the shop owner already "
+                "named one."
+            )
+        unknown = [each for each in question.options if not product_options.named(job, each)]
+        if unknown:
+            return f"\"{unknown[0]}\" isn't one of the page's product options: {listed}."
+        choices = len(question.options) + bool(question.all_of_them.strip())
+        if len(question.options) < 2 or choices > 4:
+            return (
+                f"the product option question has {choices} choices, of them "
+                f"{len(question.options)} options; it takes 2 to 4, at least 2 of them options."
+            )
+        if not 1 <= question.pick <= choices:
+            return "the product option question's pick isn't the number of one of its choices."
         return None
 
     def _card(self) -> dict[str, object]:
         """The card as kept and shown: its questions in the order the owner reads them, each
         with a key, its choices and the pick's index (from 0)."""
         questions: list[dict[str, object]] = []
-        if self.product_option is not None:
-            questions.append(_asked("product_option", self.product_option))
+        if (option := self.product_option) is not None:
+            together = option.all_of_them.strip()
+            questions.append(
+                {
+                    "key": "product_option",
+                    "asks": option.asks,
+                    "choices": [*option.options, *([together] if together else [])],
+                    "pick": option.pick - 1,
+                    # The index of the choice of every option together, or None.
+                    "all": len(option.options) if together else None,
+                }
+            )
         questions.append(
             {
                 "key": "plan",
@@ -168,7 +236,10 @@ class ShowPlanCard(Tool):
         )
         if self.other is not None:
             questions.append(_asked("other", self.other))
-        return {"opening": self.opening.strip(), "questions": questions}
+        card: dict[str, object] = {"opening": self.opening.strip(), "questions": questions}
+        if self.option_named.strip():
+            card["option_named"] = self.option_named.strip()
+        return card
 
 
 def _asked(key: str, question: Question) -> dict[str, object]:
@@ -294,22 +365,40 @@ def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Me
         if idea:
             picked["idea"] = idea
         card.answer = picked
+        job = card.job
+        option = product_options.named(job, chosen(card).get("product_option"))
+        if option and not product_options.shown_in(job, option):
+            # Nothing can be made of an option no photo shows: the lock holds, and the
+            # producer tells the shop owner and shows a new card (for_producer).
+            picked[NO_PHOTO] = option
         card.answered_at = timezone.now()
         card.save(update_fields=["answer", "answered_at"])
-        job = card.job
         job.chosen_plan = chosen(card)
         fields = ["chosen_plan"]
-        if job.chosen_plan["plan"] is not None:
+        assert job.session is not None
+        if NO_PHOTO in picked:
+            job.chosen_plan["plan"] = None
+            notices.record(
+                job.session,
+                notices.PRODUCT_OPTION_WITHOUT_PHOTO,
+                f"The shop owner chose the product option {option} on the plan card, but no "
+                "product photo shows it, so nothing is made until a new card is answered.",
+                Message.Level.PROBLEM,
+            )
+        elif job.chosen_plan["plan"] is not None:
             job.target_seconds = job.chosen_plan["plan"]["seconds"]
             fields.append("target_seconds")
         job.save(update_fields=fields)
         said = "\n".join(_said(question, picked) for question in questions)
         if choices is None:
             said = f"{USE_THE_PICKS}\n{said}"
-        assert job.session is not None
         return messages.add(
             job.session, role=Message.Role.USER, text=said, answers_plan_card=card.pk
         )
+
+
+# The key of a card's answer naming the product option chosen that no photo shows (#780).
+NO_PHOTO = "option_without_photos"
 
 
 # The longest idea the shop owner may type on the card, as long as a chat message may be.
@@ -322,8 +411,13 @@ def chosen(card: PlanCard) -> dict[str, Any]:
     key."""
     assert card.answer is not None
     kept: dict[str, Any] = {}
+    if card.card.get("option_named"):
+        kept["product_option"] = card.card["option_named"]
     for question in card.card["questions"]:
         index = card.answer[question["key"]]
+        if question["key"] == "product_option" and index == question.get("all"):
+            kept["product_option"] = product_options.ALL
+            continue
         kept[question["key"]] = None if index is None else question["choices"][index]
     if card.answer.get("idea"):
         kept["idea"] = card.answer["idea"]
@@ -353,6 +447,14 @@ def for_producer(card: PlanCard) -> str:
         if question["key"] != "plan"
     ]
     also = f" Their other answers: {' '.join(others)}" if others else ""
+    assert card.answer is not None
+    if (option := card.answer.get(NO_PHOTO)) is not None:
+        return (
+            f"[The shop owner chose the product option {option} on the plan card, but none of "
+            "the product's photos shows it, so the ad can't be made of it. Nothing was made. "
+            "Tell them so in one short sentence, and show a new plan card with the options "
+            "the photos show, or ask them to send a photo of it.]"
+        )
     plan = kept["plan"]
     if plan is None:
         return (

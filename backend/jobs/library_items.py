@@ -43,7 +43,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import notices, photos
+from . import notices, photos, product_options
 from .job_locks import LIBRARY_LOCK, one_job_at_a_time
 from .library import (
     FaceSwapped,
@@ -209,7 +209,7 @@ def _labelling_call(
     return call_model(
         job=job,
         purpose="label_photo",
-        instructions=photos.LABEL_INSTRUCTIONS,
+        instructions=photos.label_instructions(job),
         handoff=photos.LabelPhotoHandoff(
             photo=source,
             shows=shows,
@@ -221,7 +221,7 @@ def _labelling_call(
         images=[Image("Photo", key)],
         pay_once=True,
         images_may_move=True,
-    ).label_of()
+    ).label_of(job.product_options)
 
 
 def _why(error: Exception) -> str:
@@ -270,8 +270,10 @@ def needs_product_only(item: LibraryEntry) -> bool:
 def originals(job: Job) -> list[LibraryEntry]:
     """Every item of `job`'s library that isn't a version of another (ProductOnly, Recoloured
     or FaceSwapped), by number: what a sender chooses among, before jobs.product_only maps
-    each to the item that goes."""
-    return [item for item in library_of(job) if not isinstance(item.source, Version)]
+    each to the item that goes. Only the items usable for the product option the shop owner
+    chose (jobs.product_options)."""
+    items = product_options.usable(job, library_of(job))
+    return [item for item in items if not isinstance(item.source, Version)]
 
 
 def version_of(job: Job, item: LibraryEntry) -> LibraryEntry:
@@ -305,8 +307,10 @@ def shown_to_pick(library: list[LibraryEntry]) -> list[LibraryEntry]:
 
 def library_text(job: Job) -> str:
     """`job`'s library as a text list, one line per item: its number, what it shows, its
-    colour and where it came from. Only the items shown to pick (`shown_to_pick`)."""
-    return "\n".join(library_line(item) for item in shown_to_pick(library_of(job)))
+    colour and where it came from. Only the items shown to pick (`shown_to_pick`), and of
+    those only the ones usable for the chosen product option (jobs.product_options)."""
+    usable = product_options.usable(job, library_of(job))
+    return "\n".join(library_line(item) for item in shown_to_pick(usable))
 
 
 def library_line(item: LibraryEntry) -> str:

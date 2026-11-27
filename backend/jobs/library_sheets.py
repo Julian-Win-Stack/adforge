@@ -20,7 +20,7 @@ from chat.models import Message
 from gateway.gateway import past_the_safety_filter
 from gateway.types import Image
 
-from . import notices, picker_grids
+from . import notices, picker_grids, product_options
 from .clip_judge import MOST_PICTURES
 from .library import (
     FaceSwapped,
@@ -82,8 +82,9 @@ def sheets_of(job: Job, *, drawn: bool = True, how_to: bool = False) -> Sheets:
     the same library planned again makes none twice. Not `drawn`, only the counts are had.
     With `how_to`, each how-to photo the sheets show is also shown whole, after the sheets, in
     room taken from the sheets (#477). Only the items shown to pick
-    (jobs.library_items.shown_to_pick)."""
-    library = shown_to_pick(library_of(job))
+    (jobs.library_items.shown_to_pick), usable for the chosen product option
+    (jobs.product_options)."""
+    library = shown_to_pick(product_options.usable(job, library_of(job)))
     every_how_to = how_to_photos(library) if how_to else []
     whole = every_how_to[: MOST_PICTURES // 2]
     if drawn and len(whole) < len(every_how_to):

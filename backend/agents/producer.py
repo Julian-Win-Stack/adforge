@@ -22,6 +22,7 @@ from jobs import (
     owner_parts,
     page,
     plan_edits,
+    product_options,
     scene_references,
     stale,
     work,
@@ -230,8 +231,10 @@ reason: each answers a different doubt or tells its story another way. """
     + plan_card.STYLES_RULE
     + """Mark your pick. Leave out a question the shop owner's messages already answered, and \
 treat its answer as given; the plans question is always there. Ask which product option the \
-ad is for only when the page sells more than one and they haven't said, and at most one more \
-question of your own. When their answer comes, plan the ad. While the card is open, answer \
+ad is for only when read_page listed two or more and they haven't said, using the page's own \
+names, plus one choice for all of them together when that makes sense; when they already \
+named one, give it as option_named instead. The ad then shows only that option. At most one \
+more question of your own. When their answer comes, plan the ad. While the card is open, answer \
 their messages as usual; when what they say changes a plan, the product option or a \
 length, show a new card in its place, and a message that only asks something leaves it.
 Before the first plan, call plan_ad. It picks the main-looking size or pack and its
@@ -467,6 +470,10 @@ class ReadPage(Tool):
         if picked.colours:
             job.colours = list(picked.colours)
             job.save(update_fields=["colours"])
+        # The product options too, before any photo is labelled with one (#780).
+        if picked.options:
+            job.product_options = list(picked.options)
+            job.save(update_fields=["product_options"])
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
         # the notice already names, not a doubt about this page's photos.
         declared = picked.urls is None and read.marked is not None
@@ -528,6 +535,11 @@ class ReadPage(Tool):
         if download.final_url != self.link:
             told.append(f"The link led to {download.final_url}, so that is the page read.")
         told.append(f"Kept {_photos(kept)}.")
+        if product_options.offered(job):
+            told.append(
+                "The page sells these product options: "
+                f"{'; '.join(job.product_options)}. Ask which one the ad is for on the plan card."
+            )
         told += unread_videos
         if skipped:
             told.append(f"Skipped {len(skipped)} photo{'s' if len(skipped) != 1 else ''}:")

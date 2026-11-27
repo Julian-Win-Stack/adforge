@@ -107,6 +107,13 @@ class Job(models.Model):
         'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
         "until Firecrawl has answered.",
     )
+    product_options = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The product options the page sells under this one listing (two stones, "
+        "four colours, three sizes), in the page's own names, as the photo picker named them "
+        "(#780). Two or more put the product-option question on the plan card.",
+    )
     colours = models.JSONField(
         default=list,
         blank=True,
@@ -298,6 +305,12 @@ class ProductPhoto(models.Model):
         blank=True,
         help_text="In a line-up, where this product stands among the others; else blank.",
     )
+    option = models.TextField(
+        blank=True,
+        default="",
+        help_text="The product option it shows, as the page names it (Job.product_options); "
+        "blank when it shows no single one, so it is usable for every option.",
+    )
     label = models.TextField(
         blank=True,
         help_text="One sentence saying what it shows, for prompts and the planner to read.",
@@ -419,6 +432,12 @@ class LibraryItem(models.Model):
     target = models.TextField(
         blank=True,
         help_text="For a line-up, the product's position in it, as long as the picker wrote it.",
+    )
+    option = models.TextField(
+        blank=True,
+        default="",
+        help_text="The product option it shows, as the page names it (Job.product_options); "
+        "blank when it shows no single one, so it is usable for every option.",
     )
     label = models.TextField(
         help_text="One free sentence for prompts and the planner. Code never parses it."

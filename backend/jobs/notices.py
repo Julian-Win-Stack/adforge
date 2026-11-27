@@ -224,6 +224,8 @@ PLAN_CARD_INVALID = _developer("plan_card_invalid")
 PLAN_CARD_REPLACED = _owner("plan_card_replaced", failure=False)
 # The plan of scenes couldn't keep what the owner picked on the plan card (#778).
 PLAN_NOT_KEPT = _developer("plan_not_kept")
+# The shop owner chose a product option on the plan card that no product photo shows (#780).
+PRODUCT_OPTION_WITHOUT_PHOTO = _developer("product_option_without_photo")
 # A run with nobody watching (an eval or an ad-run script) got no plan card to answer (#782).
 NO_PLAN_CARD = _developer("no_plan_card")
 

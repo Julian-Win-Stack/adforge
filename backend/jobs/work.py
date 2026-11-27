@@ -77,6 +77,7 @@ from . import (
     page_text,
     photos,
     picker_grids,
+    product_options,
     reference_photos,
 )
 from .checks import (
@@ -490,6 +491,8 @@ class Picked:
     copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The product's colour list, as the picker wrote it (#273 point 2).
     colours: tuple[str, ...] = ()
+    # The product options the page sells, as the picker named them (#780).
+    options: tuple[str, ...] = ()
     # The picked links the picker saw only small or not at all (photos.seen_small): each is
     # labelled again from its own file, and its copies found by comparing files.
     seen_small: frozenset[str] = frozenset()
@@ -628,6 +631,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         labels=labels,
         copies=copies,
         colours=tuple(picked.colours),
+        options=tuple(picked.options),
         seen_small=frozenset(link.url for link in links if link.url not in seen_big),
     )
 
@@ -646,7 +650,7 @@ def _labels_and_copies(
         if found is None:
             continue
         try:
-            labels[link.url] = found.label_of(picked.colours)
+            labels[link.url] = found.label_of(picked.colours, picked.options)
         except ValueError:
             continue
         group_of[link.url] = found.copy_group
@@ -1169,6 +1173,7 @@ def keep_photo(
         alone=picked_as.alone if picked_as else "",
         colour=picked_as.colour if picked_as else "",
         target=picked_as.target if picked_as else "",
+        option=picked_as.option if picked_as else "",
         label=picked_as.label if picked_as else "",
         copy_links=list(copy_links),
         seen_small=seen_small,
@@ -5031,8 +5036,9 @@ def end_card_photo(job: Job) -> ProductPhoto | None:
     """The product photo `job`'s end card shows large: the first in the ad's colour, preferring
     one of the product alone, with no stranger's face and not cut from a video; else the
     first photo with no stranger's face. None, with a developer notice, when there is none:
-    the card is drawn without a photo."""
-    usable = job.photos.filter(has_face=False, from_video=None)
+    the card is drawn without a photo. Only photos usable for the chosen product option
+    (jobs.product_options)."""
+    usable = product_options.usable_photos(job, job.photos.filter(has_face=False, from_video=None))
     photo = (
         usable.filter(shows_product_colour=True).order_by("-alone", "position").first()
         or usable.order_by("position").first()

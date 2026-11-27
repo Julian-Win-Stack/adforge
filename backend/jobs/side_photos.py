@@ -29,7 +29,7 @@ from chat.models import Message
 from gateway.gateway import call_model
 from gateway.types import Handoff, Image
 
-from . import notices, product_only
+from . import notices, product_only, product_options
 from .cut_and_send import ad_colour
 from .job_locks import LIBRARY_LOCK, SIDE_PHOTOS_LOCK, one_job_at_a_time
 from .library import LibraryEntry, PagePhoto, PictureLabel, TrueCrop, add_to_library, library_of
@@ -248,7 +248,8 @@ def answer_of(job: Job) -> Answer | None:
 
 
 def _ask(job: Job) -> Answer:
-    photos = [item for item in library_of(job) if isinstance(item.source, PagePhoto)]
+    usable = product_options.usable(job, library_of(job))
+    photos = [item for item in usable if isinstance(item.source, PagePhoto)]
     gone = [item.number for item in photos if not file_store.exists(item.file)]
     if gone:
         notices.post_notice(

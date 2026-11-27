@@ -19,7 +19,9 @@ from .conftest import (
     given_to_the_producer,
     handoffs,
     results_of,
+    shampoo_picked,
 )
+from .test_picker_labels import label, labelled_page  # noqa: F401 (a fixture)
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.plan_card]
 
@@ -40,6 +42,7 @@ PLANS = [a_plan("Hot all morning"), a_plan("Fits the cup holder"), a_plan("Ten-y
 CARD: dict[str, Any] = {
     "opening": "I read the page and looked at its photos. Here are 3 plans.",
     "product_option": None,
+    "option_named": "",
     "plans": PLANS,
     "plans_pick": 1,
     "other": None,
@@ -386,3 +389,204 @@ def test_a_plan_of_scenes_that_couldnt_keep_the_chosen_plan_is_told(
 
     assert _kinds("plan_not_kept") == ["plan_not_kept"]
     assert f"Tell the shop owner in one short sentence: {why}" in results_of("plan_ad")[0]
+
+
+# A page selling two stones (#780): the picker names the options and labels each photo with
+# the one it shows. I8 shows jade, I101 rose quartz, I102 both stones together.
+def _with_options(options: list[str]) -> dict[str, Any]:
+    pictures = [
+        {**label("I8", 1, "side", "front", "The jade pendant from the front."), "option": "Jade"},
+        {
+            **label("I101", 2, "side", "back", "The rose quartz pendant from the back."),
+            "option": "Rose quartz",
+        },
+        {**label("I102", 3, "side", "side", "Both pendants side by side."), "option": "all"},
+    ]
+    return {
+        **shampoo_picked({"gallery_images": [8, 101, 102], "options": options}),
+        "pictures": pictures,
+    }
+
+
+def _option_card(option: dict[str, Any] | None, named: str = "") -> dict[str, Any]:
+    return {**CARD, "product_option": option, "option_named": named}
+
+
+WHICH_STONE = {
+    "asks": "Which stone?",
+    "options": ["Jade", "Rose quartz"],
+    "all_of_them": "Both stones",
+    "pick": 1,
+}
+
+
+def _read_with_options(
+    producer: ScriptedProducer, link: str, options: list[str], *calls: Any
+) -> None:
+    producer.fake_model.respond("check_page", READABLE)
+    producer.fake_model.respond("pick_photos", _with_options(options))
+    producer.told(
+        f"Make an ad for {link}",
+        ("read_page", {"link": link, "target_seconds": None, "why": "To start."}),
+        *calls,
+    )
+
+
+def _numbers(items: list[Any]) -> list[str]:
+    return [item.label for item in items]
+
+
+def test_a_page_with_two_options_asks_which_and_the_ad_is_offered_only_that_options_photos(
+    producer: ScriptedProducer,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    api: APIClient,
+    session_id: str,  # noqa: F811
+) -> None:
+    from jobs import library_items, library_sheets
+    from jobs.work import end_card_photo
+
+    _read_with_options(
+        producer,
+        labelled_page,
+        ["Jade", "Rose quartz"],
+        turn(calls=[("show_plan_card", {**_option_card(WHICH_STONE), "why": "Read."})]),
+    )
+
+    assert "The page sells these product options: Jade; Rose quartz." in results_of("read_page")[0]
+    job = Job.objects.get()
+    assert job.product_options == ["Jade", "Rose quartz"]
+    # Each photo records the option it shows; one of both stones shows no single one.
+    assert sorted(job.library.values_list("label", "option")) == [
+        ("Both pendants side by side.", ""),
+        ("The jade pendant from the front.", "Jade"),
+        ("The rose quartz pendant from the back.", "Rose quartz"),
+    ]
+    card = _the_card(api, session_id)
+    asked = card["questions"][0]
+    assert asked["key"] == "product_option"
+    assert asked["choices"] == ["Jade", "Rose quartz", "Both stones"]
+    assert asked["pick"] == 0
+    producer.fake_model.respond("produce", turn(says="On it."))
+
+    answered = _answer(api, session_id, card["id"], choices={"product_option": 0, "plan": 0})
+
+    assert answered.status_code == 201, answered.json()
+    assert chat(api, session_id)[-2] == (
+        "user",
+        "Which stone? Jade\nWhich plan? “Hot all morning” (Person talking, 20 s)",
+    )
+    job.refresh_from_db()
+    assert _chosen()["product_option"] == "Jade"
+    # The planner's and scene agents' list, the senders' originals, the side picker's photos
+    # and the end card: only jade and both stones, never rose quartz.
+    offered = ["The jade pendant from the front.", "Both pendants side by side."]
+    assert _numbers(library_items.originals(job)) == offered
+    assert "rose quartz" not in library_items.library_text(job)
+    assert "rose quartz" not in str(library_sheets.sheets_of(job))
+    end_photo = end_card_photo(job)
+    assert end_photo is not None and end_photo.option in ("", "Jade")
+
+
+def test_all_of_the_options_narrows_nothing(
+    producer: ScriptedProducer,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    api: APIClient,
+    session_id: str,  # noqa: F811
+) -> None:
+    from jobs import library_items
+
+    _read_with_options(
+        producer,
+        labelled_page,
+        ["Jade", "Rose quartz"],
+        turn(calls=[("show_plan_card", {**_option_card(WHICH_STONE), "why": "Read."})]),
+    )
+    card = _the_card(api, session_id)
+    producer.fake_model.respond("produce", turn(says="On it."))
+
+    _answer(api, session_id, card["id"], choices={"product_option": 2, "plan": 0})
+
+    job = Job.objects.get()
+    assert _chosen()["product_option"] == "all"
+    assert len(library_items.originals(job)) == 3
+
+
+def test_a_card_must_ask_the_option_on_a_page_with_two_and_never_on_a_page_with_one(
+    producer: ScriptedProducer,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    api: APIClient,
+    session_id: str,  # noqa: F811
+) -> None:
+    from jobs import library_items
+
+    _read_with_options(
+        producer,
+        labelled_page,
+        ["Jade", "Rose quartz"],
+        ("show_plan_card", {**CARD, "why": "Read."}),
+        # They named the stone in their first message, so the card doesn't ask it.
+        turn(calls=[("show_plan_card", {**_option_card(None, "rose quartz"), "why": "Named."})]),
+    )
+
+    [refused] = results_of("show_plan_card")[:1]
+    assert "the page sells 2 product options (Jade; Rose quartz)" in refused
+    card = _the_card(api, session_id)
+    assert [q["key"] for q in card["questions"]] == ["plan"]
+    producer.fake_model.respond("produce", turn(says="On it."))
+    _answer(api, session_id, card["id"], use_picks=True)
+    job = Job.objects.get()
+    assert _chosen()["product_option"] == "rose quartz"
+    assert _numbers(library_items.originals(job)) == [
+        "The rose quartz pendant from the back.",
+        "Both pendants side by side.",
+    ]
+
+
+def test_a_page_with_one_option_gets_no_option_question(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(
+        producer,
+        product_page_url,
+        turn(calls=[("show_plan_card", {**CARD, "why": "Fixed."})]),
+        card=_option_card(WHICH_STONE),
+    )
+
+    assert "the page sells one product option" in results_of("show_plan_card")[0]
+    assert [q["key"] for q in _the_card(api, session_id)["questions"]] == ["plan"]
+
+
+def test_an_option_no_photo_shows_is_told_and_a_new_card_shown_with_nothing_made(
+    producer: ScriptedProducer,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    api: APIClient,
+    session_id: str,  # noqa: F811
+) -> None:
+    three = {**WHICH_STONE, "options": ["Jade", "Rose quartz", "Onyx"], "all_of_them": ""}
+    _read_with_options(
+        producer,
+        labelled_page,
+        ["Jade", "Rose quartz", "Onyx"],
+        turn(calls=[("show_plan_card", {**_option_card(three), "why": "Read."})]),
+    )
+    card = _the_card(api, session_id)
+    producer.fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {"why": "Answered."})]),
+        turn(
+            says="None of the photos shows the onyx pendant, so pick another stone.",
+            calls=[("show_plan_card", {**_option_card(WHICH_STONE), "why": "No onyx photo."})],
+        ),
+    )
+
+    answered = _answer(api, session_id, card["id"], choices={"product_option": 2, "plan": 0})
+
+    assert answered.status_code == 201, answered.json()
+    assert "none of the product's photos shows it" in str(given_to_the_producer(3))
+    assert "plan card must be shown and answered first" in results_of("plan_ad")[0]
+    assert _kinds("product_option_without_photo") == ["product_option_without_photo"]
+    job = Job.objects.get()
+    assert job.model_calls.filter(purpose="plan_ad").count() == 0
+    assert not job.scenes.exists()
+    cards = [m["plan_card"] for m in _messages(api, session_id) if m.get("plan_card")]
+    assert [c["state"] for c in cards] == ["answered", "open"]

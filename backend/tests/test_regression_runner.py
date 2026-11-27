@@ -383,7 +383,13 @@ PLANS = [
     }
     for title, seconds in (("Softer hair", 33), ("One wash", 35), ("No sulphates", 34))
 ]
-CARD = {"opening": "Here are 3 plans.", "product_option": None, "plans": PLANS, "plans_pick": 1}
+CARD = {
+    "opening": "Here are 3 plans.",
+    "product_option": None,
+    "option_named": "",
+    "plans": PLANS,
+    "plans_pick": 1,
+}
 
 
 def script_card_then_plan(fake_model: FakeModel, scenario: Scenario) -> None:
