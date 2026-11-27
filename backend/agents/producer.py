@@ -2050,8 +2050,9 @@ class AssembleAd(Tool):
     """Assemble the finished ad from every scene's clip, in order, with each scene's overlay,
     the music and the end card, and show it to the shop owner in the chat. A person-talking
     ad has captions of the written line timed from its transcript and the music under the
-    voice; a product-shots ad has each clip cut to its planned length and the music alone.
-    Only once every scene is finished and the music is made. Costs nothing."""
+    voice; a product-shots ad has each clip cut on the music's beat nearest its planned
+    length and the music alone. Only once every scene is finished and the music is made.
+    Costs nothing."""
 
     name = "assemble_ad"
     runs_while_paused = True
@@ -2076,7 +2077,8 @@ class AssembleAd(Tool):
         if ad.end_card is not None:
             plays.append(f"the end card from {ad.end_card['start']:g} to {ad.end_card['end']:g}")
         how = (
-            "each clip cut to its planned length with no sound of its own, the music alone, "
+            "each clip cut on the music's beat nearest its planned length with no sound of its "
+            "own, the music alone, "
             if product_shots.is_product_shots(job)
             else f"each clip with its own sound, up to {assembly.AFTER_LAST_WORD_SECONDS:g} "
             "seconds after its last word, with captions of the written line, the music under "
@@ -2419,9 +2421,13 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
     card = _end_card_text(job)
     # One made before clips were cut after their last word (#442) keeps that silence, so it
     # is made again.
+    beats = product_shots.music_beats(music) if product_shots.is_product_shots(job) else None
     kept_to = (
-        [cut.clip_end for cut in product_shots.cuts([clip for clip, _ in scene_clips])]
-        if product_shots.is_product_shots(job)
+        [
+            cut.clip_end
+            for cut in product_shots.cuts([clip for clip, _ in scene_clips], beats.times)[0]
+        ]
+        if beats is not None
         else [
             assembly.closing_silence_end(
                 assembly.last_word_end(transcript.words if transcript is not None else []),
@@ -2442,7 +2448,7 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
             _show(session, ad, made_for)
             return ad, True
     try:
-        ad = assemble_ad(job, scene_clips, music)
+        ad = assemble_ad(job, scene_clips, music, beats)
     except AssemblyFailed as failed:
         post_notice(
             job,

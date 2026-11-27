@@ -189,6 +189,8 @@ from .threads import closing_its_connection as _closing_its_connection
 if TYPE_CHECKING:
     from agents.models import ToolCall
 
+    from .product_shots import Beats
+
 CHECK_INSTRUCTIONS = """\
 You check whether a product page was read properly. It may have been read in a real \
 browser, or with a plain HTTP request, in which case nothing that needs JavaScript ran. You \
@@ -4965,7 +4967,10 @@ def timed_caption_words(transcript: ProducedItem | None, *, line: str) -> list[d
 
 
 def assemble_ad(
-    job: Job, scenes: list[tuple[ProducedItem, ProducedItem | None]], music: ProducedItem
+    job: Job,
+    scenes: list[tuple[ProducedItem, ProducedItem | None]],
+    music: ProducedItem,
+    beats: Beats | None = None,
 ) -> ProducedItem:
     """Join the clips, their sound, written captions and overlays with music underneath.
 
@@ -4974,24 +4979,41 @@ def assemble_ad(
     assembly.AFTER_LAST_WORD_SECONDS after a clip's last word (#442). Captions use each
     clip's transcript, including historical audio-backed transcripts, when available. Keep
     the result as the next ad version, with no model call. A product-shots ad has no voice:
-    its clips are cut to their planned lengths, with no captions and none of their own sound,
-    the music alone under them (jobs.product_shots).
+    its clips are cut on the music's beats nearest their planned lengths, with no captions and
+    none of their own sound, the music alone under them (jobs.product_shots, jobs.beats).
     """
     from . import product_shots
 
     if product_shots.is_product_shots(job):
-        planned = product_shots.cuts([clip for clip, _ in scenes])
+        found = beats if beats is not None else product_shots.music_beats(music)
+        if found.times is None:
+            post_notice(
+                job,
+                notices.BEATS_NOT_FOUND,
+                f"{found.missing.capitalize()}, so the product-shots ad is cut at the planned "
+                "scene lengths.",
+                Message.Level.PROBLEM,
+            )
+        planned, off_beat = product_shots.cuts([clip for clip, _ in scenes], found.times)
+        if off_beat:
+            post_notice(
+                job,
+                notices.BEATS_NOT_FOUND,
+                f"No beat of the music fell within scene {', '.join(map(str, off_beat))}'s clip "
+                "after the cut before, so it is cut at its planned length, off the beat.",
+                Message.Level.PROBLEM,
+            )
         drawn: list[assembly.Caption] = []
         clip_sound, music_volume = False, product_shots.MUSIC_ALONE_VOLUME
-        for cut in planned:
-            scene = job.scenes.get(number=cut.scene)
-            if cut.clip_end < product_shots.planned_seconds(scene):
+        for clip, _ in scenes:
+            assert clip.scene is not None
+            wanted = product_shots.planned_seconds(clip.scene)
+            if (clip.seconds or 0.0) < wanted:
                 post_notice(
                     job,
                     notices.CLIP_SHORTER_THAN_PLANNED,
-                    f"Scene {cut.scene}'s clip lasts {cut.clip_end:g} seconds, shorter than the "
-                    f"{product_shots.planned_seconds(scene):g} seconds planned, so the ad is "
-                    "that much shorter.",
+                    f"Scene {clip.scene.number}'s clip lasts {clip.seconds:g} seconds, shorter "
+                    f"than the {wanted:g} seconds planned, so the ad is that much shorter.",
                     Message.Level.PROBLEM,
                 )
     else:

@@ -553,6 +553,8 @@ def test_a_filmed_product_shots_ad_is_put_together_with_its_overlays_and_the_mus
     fake_model: FakeModel,
     product_page_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    api: APIClient,
+    session_id: str,
 ) -> None:
     filmed_product_shots(producer, fake_model, product_page_url)
 
@@ -571,7 +573,9 @@ def test_a_filmed_product_shots_ad_is_put_together_with_its_overlays_and_the_mus
     producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
 
     (ad,) = Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
-    # Each clip cut to its planned length, with its overlay, then the end card.
+    # The fake music is a held hum with no beat: each clip is cut to its planned length, with
+    # its overlay, then the end card, and the developer is told.
+    assert any("No clear beat" in text for _, text in recorded(api, session_id))
     assert [(cut["start"], cut["end"], cut["overlay"]) for cut in ad.cuts] == [
         (0.0, 4.0, "Hand-thrown"),
         (4.0, 9.0, "Holds 350 ml"),
@@ -803,3 +807,50 @@ def test_an_ai_scene_cant_start_on_the_real_photo(
 
     assert results_of("use_real_photo")[-1].startswith("Refused")
     assert "extend_real_photo" not in paid_for()
+
+
+def test_every_cut_of_a_product_shots_ad_lands_on_a_beat_of_its_music(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # A beat every 0.6 seconds (100 BPM), off the planned 4, 9 and 13 second cuts.
+    fake_model.music_beat_every = 0.6
+    filmed_product_shots(producer, fake_model, product_page_url)
+
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
+
+    job = Job.objects.get()
+    (ad,) = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
+    # The fake music knocks every 0.6 seconds from 0.3.
+    beats = [round(0.3 + 0.6 * n, 3) for n in range(40)]
+    one_frame = 1 / 30
+    cut_times = [cut["end"] for cut in ad.cuts]
+    assert all(min(abs(time - beat) for beat in beats) <= one_frame for time in cut_times)
+    # Off the planned cuts, but each within one beat of its own; the ad keeps its length.
+    assert cut_times != [4.0, 9.0, 13.0]
+    assert all(
+        abs(time - want) <= 0.6 for time, want in zip(cut_times, [4.0, 9.0, 13.0], strict=True)
+    )
+    assert ad.end_card is not None and ad.end_card["start"] == cut_times[-1]
+    assert not any("No clear beat" in text for _, text in recorded(api, session_id))
+
+
+def test_a_short_clip_shortens_an_ad_cut_on_the_beat_without_stretching_the_next_scene(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    fake_model.music_beat_every = 0.6
+    filmed_product_shots(producer, fake_model, product_page_url)
+    ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP, scene__number=1).update(seconds=2.0)
+
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
+
+    (ad,) = Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
+    lengths = [round(cut["end"] - cut["start"], 3) for cut in ad.cuts]
+    # Scene 1 plays its 2 s clip to its last beat; scene 2 isn't stretched to make up for
+    # it (planned 5 s), so the ad ends about 2 seconds early, within a beat of 11 s.
+    assert lengths[0] <= 2.0
+    assert lengths[1] <= 5.0
+    assert abs(ad.cuts[-1]["end"] - 11.0) <= 0.6
