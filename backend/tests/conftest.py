@@ -883,7 +883,13 @@ def results_of(tool: str) -> list[str]:
     said, without the page and its photos that follow it once a page is read (ADR 0016,
     tests/test_producer_sees_the_page.py)."""
     results = ToolCall.objects.filter(tool=tool).values_list("result", flat=True)
-    return [result.split(f"\n\n{PAGE_HEADING}")[0] for result in results]
+    return [told_by_the_tool(result) for result in results]
+
+
+def told_by_the_tool(result: str) -> str:
+    """What a tool said in `result`, without the page and its photos that follow it once a
+    page is read (ADR 0016)."""
+    return result.split(f"\n\n{PAGE_HEADING}")[0]
 
 
 # The clip judge's asks of a B-roll clip, judged against its sent list, as paid_for lists them

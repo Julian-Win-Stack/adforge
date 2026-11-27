@@ -14,7 +14,6 @@ from rest_framework.test import APIClient
 from adforge.retry import OutsideServiceDown
 from agents import loop
 from agents.models import ToolCall
-from agents.page_for_producer import PAGE_HEADING
 from agents.producer import PRODUCER
 from chat import messages
 from chat.models import Message, Session
@@ -36,6 +35,7 @@ from .conftest import (
     picture,
     recorded,
     results_of,
+    told_by_the_tool,
 )
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
@@ -1066,8 +1066,6 @@ def test_the_producer_is_given_the_result_of_the_tool_the_stopped_worker_left(
     )
     assert given["arguments"] == {"link": product_page_url, "target_seconds": 15}
     # What the tool said, before the page and its photos (ADR 0016).
-    assert (
-        given["result"]
-        .split(f"\n\n{PAGE_HEADING}")[0]
-        .endswith("The page names the mug, its price and its size.\nKept 2 product photos.")
+    assert told_by_the_tool(given["result"]).endswith(
+        "The page names the mug, its price and its size.\nKept 2 product photos."
     )

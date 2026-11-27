@@ -624,8 +624,7 @@ class UsePhotos(Tool):
 
 class SeePage(Tool):
     """Read the product page's text and see its product photos again, as they stand now:
-    after the shop owner pasted the page in the page panel, or whenever you need them back.
-    Costs nothing."""
+    after the shop owner pasted the page in the page panel, or whenever you need them back."""
 
     name = "see_page"
     runs_while_paused = True
@@ -2732,6 +2731,7 @@ PRODUCER = Agent(
     asks_why=True,
     pausable=True,
     folds=True,
+    shows_each_picture_once=True,
     asks_again=True,
     snapshot=snapshot.ad_as_it_stands,
     holds_the_turn=note_photos.hold_the_turn,

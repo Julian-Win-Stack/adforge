@@ -46,9 +46,9 @@ def no_nudges(settings: Settings) -> None:
 
 @pytest.fixture
 def no_photos_shown(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The producer is shown no product photo with the page, so a turn the filter stops was
-    stopped over its own words: with a photo in its conversation, the turn is first taken
-    again without the photo (tests/test_producer_sees_the_page.py)."""
+    """The producer is shown no product photo with the page, so these tests see the filter's
+    retries of its turn: with photos in its conversation, a refused turn is first taken again
+    without them (tests/test_producer_sees_the_page.py)."""
     monkeypatch.setattr(page_for_producer, "MOST_PHOTOS", 0)
 
 
