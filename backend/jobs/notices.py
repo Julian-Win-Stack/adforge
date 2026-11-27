@@ -222,6 +222,8 @@ PLAN_CARD_LOCKED = _developer("plan_card_locked")
 PLAN_CARD_INVALID = _developer("plan_card_invalid")
 # An answer came for a plan card a newer one replaced, as from a stale tab (#781).
 PLAN_CARD_REPLACED = _owner("plan_card_replaced", failure=False)
+# The plan of scenes couldn't keep what the owner picked on the plan card (#778).
+PLAN_NOT_KEPT = _developer("plan_not_kept")
 # A run with nobody watching (an eval or an ad-run script) got no plan card to answer (#782).
 NO_PLAN_CARD = _developer("no_plan_card")
 

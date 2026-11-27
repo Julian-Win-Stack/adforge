@@ -11,7 +11,15 @@ from agents.models import SystemNote
 from gateway.fake import turn
 from jobs.models import Job, ProducedItem
 
-from .conftest import PLAN, READABLE, ScriptedProducer, chat, given_to_the_producer, results_of
+from .conftest import (
+    PLAN,
+    READABLE,
+    ScriptedProducer,
+    chat,
+    given_to_the_producer,
+    handoffs,
+    results_of,
+)
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.plan_card]
 
@@ -201,6 +209,12 @@ def test_an_answer_unlocks_and_the_ad_is_planned_at_the_chosen_plans_length(
     assert shown["state"] == "answered"
     # The producer reads the whole chosen plan with the owner's answer.
     assert f"built on: What makes {title} different." in str(given_to_the_producer(3))
+    # And the planner is handed it as fixed input (#778).
+    [handoff] = handoffs("plan_ad")
+    assert handoff["chosen_plan"] == (
+        f"Title: {title}. Built on: What makes {title} different. Opens: Opens on {title}. "
+        f"Length: {seconds} seconds."
+    )
 
 
 def test_a_card_takes_one_answer(
@@ -355,3 +369,20 @@ def test_an_answer_with_neither_a_plan_nor_an_idea_is_refused(
 
     assert refused.status_code == 400
     assert Job.objects.get().chosen_plan is None
+
+
+def test_a_plan_of_scenes_that_couldnt_keep_the_chosen_plan_is_told(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(producer, product_page_url)
+    card_id = _the_card(api, session_id)["id"]
+    why = "The page shows no cup holder, so the ad opens on the mug in a hand instead."
+    producer.fake_model.respond("plan_ad", {**PLAN, "plan_not_kept": why})
+    producer.fake_model.respond(
+        "produce", turn(calls=[("plan_ad", {"why": "Answered."})]), turn(says="Planned.")
+    )
+
+    _answer(api, session_id, card_id, choices={"plan": 1})
+
+    assert _kinds("plan_not_kept") == ["plan_not_kept"]
+    assert f"Tell the shop owner in one short sentence: {why}" in results_of("plan_ad")[0]

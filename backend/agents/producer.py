@@ -223,7 +223,9 @@ it, and a message in the chat doesn't answer it. The card is the one place you a
 anything. Write 3 plans from what the page says. First name the 2 or 3 doubts a buyer \
 seeing this product for the first time has, assuming new buyers unless the shop owner says \
 otherwise; each plan answers one of them. Build each plan on one thing this listing has \
-that similar products don't, and say in one sentence how it opens. The plans differ for a \
+that similar products don't, and say in one sentence how it opens: a person talking plan \
+opens on the person talking to camera, as every rule below for that style holds. The plans \
+differ for a \
 reason: each answers a different doubt or tells its story another way. """
     + plan_card.STYLES_RULE
     + """Mark your pick. Leave out a question the shop owner's messages already answered, and \
@@ -693,7 +695,23 @@ class PlanAd(Tool):
             _the_plan(job, decision.reason)
             + _tell_plan_choices(job, decision.choices)
             + _parts_drawn(job)
+            + _plan_not_kept(job, decision.plan_not_kept)
         )
+
+
+def _plan_not_kept(job: Job, why: str) -> str:
+    """What of the shop owner's chosen plan the plan of scenes couldn't keep, recorded for
+    the developer and handed to the producer to tell them; "" when it kept it all."""
+    why = " ".join(why.split())
+    if not why or job.chosen_plan is None:
+        return ""
+    post_notice(
+        job,
+        notices.PLAN_NOT_KEPT,
+        f"The plan of scenes couldn't keep the plan the owner picked: {why}",
+        Message.Level.PROBLEM,
+    )
+    return f"\nTell the shop owner in one short sentence: {why}"
 
 
 def _tell_plan_choices(job: Job, choices: str) -> str:

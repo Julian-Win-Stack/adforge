@@ -1355,6 +1355,18 @@ def plan_handoff(job: Job, page_text: str, sheets: library_sheets.Sheets) -> Pla
         target_seconds=job.target_seconds,
         conversation=_conversation(job),
         photo_worry=f"The photos are in doubt: {job.photo_worry}" if job.photo_worry else "",
+        chosen_plan=_chosen_plan(job),
+    )
+
+
+def _chosen_plan(job: Job) -> str:
+    """The plan the shop owner picked on the plan card, as the planner is handed it, or ""."""
+    plan = (job.chosen_plan or {}).get("plan")
+    if not plan:
+        return ""
+    return (
+        f"Title: {plan['title']}. Built on: {plan['built_on']} Opens: {plan['opens']} "
+        f"Length: {plan['seconds']} seconds."
     )
 
 
