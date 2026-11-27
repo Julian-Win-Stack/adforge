@@ -131,6 +131,10 @@ class FakeModel:
     # enough apart for a test to measure each on its own.
     VOICE_HERTZ = 440
     MUSIC_HERTZ = 110
+    # A test sets this to have the music beat, a loud knock every so many seconds over its
+    # hum, from MUSIC_FIRST_BEAT; else it is a held hum with no beat.
+    music_beat_every: float | None = None
+    MUSIC_FIRST_BEAT = 0.3
 
     def __init__(self) -> None:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
@@ -449,6 +453,10 @@ class FakeModel:
             file.setsampwidth(2)
             file.setframerate(self.SAMPLE_RATE)
             frames = _tone_frames(seconds, self.SAMPLE_RATE, hertz=self.MUSIC_HERTZ)
+            if self.music_beat_every is not None:
+                frames = _with_knocks(
+                    frames, self.SAMPLE_RATE, self.MUSIC_FIRST_BEAT, self.music_beat_every
+                )
             file.writeframes((len(self.music) + 1).to_bytes(2, "little") + frames[2:])
         self.music.append(music.getvalue())
         return self.music[-1]
@@ -525,6 +533,22 @@ def _silence(*, seconds: float) -> bytes:
 
 def _silence_frames(seconds: float, rate: int) -> bytes:
     return b"\0\0" * round(seconds * rate)
+
+
+def _with_knocks(frames: bytes, rate: int, first: float, every: float) -> bytes:
+    """`frames` with a short loud knock every `every` seconds from `first`."""
+    samples = bytearray(frames)
+    length = round(0.03 * rate)
+    at = first
+    while round(at * rate) + length < len(samples) // 2:
+        start = round(at * rate)
+        for i in range(length):
+            value = round(30000 * (1 - i / length) * (1 if i % 2 else -1))
+            samples[(start + i) * 2 : (start + i) * 2 + 2] = value.to_bytes(
+                2, "little", signed=True
+            )
+        at += every
+    return bytes(samples)
 
 
 @functools.cache

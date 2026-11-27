@@ -41,8 +41,9 @@ def test_the_producer_is_told_the_assembly_contract_without_retired_cuts(
         "Assemble the finished ad from every scene's clip, in order, with each scene's overlay,\n"
         "the music and the end card, and show it to the shop owner in the chat. A person-talking\n"
         "ad has captions of the written line timed from its transcript and the music under the\n"
-        "voice; a product-shots ad has each clip cut to its planned length and the music alone.\n"
-        "Only once every scene is finished and the music is made. Costs nothing."
+        "voice; a product-shots ad has each clip cut on the music's beat nearest its planned\n"
+        "length and the music alone. Only once every scene is finished and the music is made.\n"
+        "Costs nothing."
     )
 
 

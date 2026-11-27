@@ -3,11 +3,16 @@ music, no presenter and no spoken line. Its planned lengths, its music and its p
 check; its scenes are made by the scene agent (agents/scene_agent/silent.py)."""
 
 import math
+import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from django.db import transaction
 
+from adforge import file_store
+
 from . import assembly
+from .beats import find_beats, on_the_beat
 from .checks import LineToCheck
 from .models import AdStyle, Job, ProducedItem, Scene, SceneStep
 from .planning import END_CARD_SECONDS
@@ -155,16 +160,28 @@ def check_overlays(job: Job) -> str | None:
     return None
 
 
-def cuts(clips: Sequence[ProducedItem]) -> list[assembly.Cut]:
-    """Each silent scene's clip cut to its planned length (or its whole length, if shorter),
-    one after another, with the scene's overlay. A silent scene has no voice."""
-    planned = []
-    start = 0.0
+def cuts(
+    clips: Sequence[ProducedItem], beats: Sequence[float] | None
+) -> tuple[list[assembly.Cut], list[int]]:
+    """Each silent scene's clip, one after another with the scene's overlay, cut so every
+    cut lands on one of the music's `beats` nearest its planned place (jobs.beats), or, with
+    no beats, at its planned length (or its whole length, if shorter); and the scenes, by
+    number, whose cut is off the beat. A silent scene has no voice."""
     for clip in clips:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
-        length = round(min(planned_seconds(clip.scene), clip.seconds), 3)
+    planned = [planned_seconds(clip.scene) for clip in clips if clip.scene is not None]
+    held = [float(clip.seconds or 0.0) for clip in clips]
+    if beats is None:
+        lengths = [round(min(want, most), 3) for want, most in zip(planned, held, strict=True)]
+        off_beat: list[int] = []
+    else:
+        lengths, off_beat = on_the_beat(planned, held, beats)
+    made = []
+    start = 0.0
+    for clip, length in zip(clips, lengths, strict=True):
+        assert clip.scene is not None
         end = round(start + length, 3)
-        planned.append(
+        made.append(
             assembly.Cut(
                 scene=clip.scene.number,
                 clip=clip.pk,
@@ -180,4 +197,22 @@ def cuts(clips: Sequence[ProducedItem]) -> list[assembly.Cut]:
             )
         )
         start = end
-    return planned
+    return made, [made[position].scene for position in off_beat]
+
+
+@dataclass(frozen=True)
+class Beats:
+    """The beats found in the ad's music, or None and why not."""
+
+    times: list[float] | None
+    missing: str = ""
+
+
+def music_beats(music: ProducedItem) -> Beats:
+    """The beats of the ad's music (jobs.beats)."""
+    try:
+        times = find_beats(file_store.read(music.file))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as failed:
+        said = failed.stderr.decode(errors="replace").strip() if failed.stderr else ""
+        return Beats(None, f"ffmpeg couldn't read the music ({said or failed})")
+    return Beats(times, "" if times is not None else "no clear beat was found in the music")
