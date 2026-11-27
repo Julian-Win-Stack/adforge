@@ -181,8 +181,8 @@ def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_n
     # developer.
     assert results_of("assemble_ad") == [
         "Failed: the clips and music couldn't be put together into the ad, as ffmpeg failed: "
-        "Output file #0 does not contain any stream. Nothing was paid for, and every clip and "
-        "the music are kept. Assembling the same clips again fails the same way."
+        "Output file #0 does not contain any stream. No clip or music was paid for again, and "
+        "every clip and the music are kept. Assembling the same clips again fails the same way."
     ]
     assert any(
         "ffmpeg couldn't put the ad together" in text and "does not contain any stream" in text
@@ -221,8 +221,8 @@ def test_an_ad_that_takes_too_long_to_put_together_is_a_failure_a_later_try_may_
     # Not said to fail the same way again: a slow machine may finish it next time.
     assert results_of("assemble_ad") == [
         "Failed: the clips and music couldn't be put together into the ad, as ffmpeg failed: "
-        "ffprobe took over 60 seconds. Nothing was paid for, and every clip and the music are "
-        "kept."
+        "ffprobe took over 60 seconds. No clip or music was paid for again, and every clip and "
+        "the music are kept."
     ]
     assert any("ffprobe took over 60 seconds" in text for _, text in recorded(api, session_id))
     assert ads() == []

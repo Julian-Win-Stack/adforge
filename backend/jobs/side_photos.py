@@ -238,7 +238,8 @@ def answer_of(job: Job) -> Answer | None:
                 notices.SIDE_PICKER_FAILED,
                 f"The side picker (the call that boxes the product in the page photos) failed "
                 f"({why}), so this ad's picks that aren't the product alone go as redrawn "
-                "cut-outs. It isn't asked again for this ad.",
+                "cut-outs, and no page photo can be cropped for its end card. It isn't asked "
+                "again for this ad.",
                 Message.Level.PROBLEM,
             )
             return None

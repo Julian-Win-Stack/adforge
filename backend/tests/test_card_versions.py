@@ -419,7 +419,8 @@ def test_a_swap_the_ad_cant_be_assembled_with_is_a_stated_failure_and_the_chat_k
     assert note.text.endswith(
         " The ad couldn't be assembled again with it: the clips and music couldn't be put "
         "together into the ad, as ffmpeg failed: Failed to configure output pad on "
-        "Parsed_concat_8. Nothing was paid for, and every clip and the music are kept. "
+        "Parsed_concat_8. No clip or music was paid for again, and every clip and the music "
+        "are kept. "
         "Assembling the same clips again fails the same way."
     )
     assert chat(api, session_id)[-1] == ("agent", "It's in the ad.")
