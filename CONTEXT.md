@@ -108,7 +108,7 @@ A product-shots ad's scene: what it shows, the product photo it starts from, whe
 _Avoid_: Product shot, hero shot, B-roll
 
 **Real photo** (of a silent scene):
-The shop's own product photo used as the scene's starting picture, its pixels kept: code crops it to the tall frame, or the picture model extends its background and code pastes the photo back over it. The opposite is an **AI scene**, a starting picture drawn from the photos.
+The shop's own product photo used as the scene's starting picture, its pixels kept: code crops it to the tall frame, or the picture model extends its background and code pastes the photo back over it. The opposite is an **AI scene**, a starting picture drawn from the photos. A real-photo scene whose picture can't be fitted, or fails its check twice, becomes an AI scene and the shop owner is told.
 _Avoid_: Hero photo, original
 
 **Talking scene**:

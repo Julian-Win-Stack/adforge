@@ -1113,3 +1113,50 @@ def test_a_made_up_person_is_refused_without_the_owner_asking(
 
     assert results_of("make_up_a_person")[-1].startswith("Refused")
     assert "draw_person" not in paid_for()
+
+
+PICTURE_FAILS = {
+    **PICTURE_PASSES,
+    "product_same": {"passes": False, "says": "The handle is cut off by the frame."},
+}
+
+
+def test_a_real_photo_scene_whose_picture_fails_twice_is_drawn_instead_and_the_owner_is_told(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .conftest import chat
+
+    fake_model.respond("check_scene_picture", PICTURE_FAILS, PICTURE_FAILS)
+    one_scene_started(
+        producer,
+        fake_model,
+        product_page_url,
+        REAL_PHOTO_SCENE,
+        turn(calls=[("use_real_photo", {"focus_x": 50, "focus_y": 50})]),
+        turn(calls=[("use_real_photo", {"focus_x": 40, "focus_y": 50})]),
+        turn(
+            calls=[
+                (
+                    "draw_silent_picture",
+                    {**SILENT_PICTURE, "picks": [{"item": 2, "take": "the mug's exact shape"}]},
+                )
+            ]
+        ),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.woken("Scene 1 is filmed.")
+
+    first, second = results_of("use_real_photo")
+    assert "draw_silent_picture" not in first
+    assert "AI scene now" in second and "draw_silent_picture" in second
+    scene = Scene.objects.get(number=1)
+    assert (scene.silent or {})["start"] == "ai scene"
+    assert not results_of("draw_silent_picture")[-1].startswith("Refused")
+    assert paid_for().count("draw_scene_picture") == 1
+    assert scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+    told = [text for _, text in chat(api, session_id) if "couldn't start on your photo" in text]
+    assert len(told) == 1 and "failed its check twice" in told[0]
