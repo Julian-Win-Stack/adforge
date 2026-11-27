@@ -2450,6 +2450,11 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
             f"scene {unchecked.number}'s line hasn't passed the fact check, and nothing is made "
             "until every line has. Run the planning checks first."
         )
+    from . import product_shots
+
+    if product_shots.is_product_shots(job):
+        # Silent scenes have no spoken line to fit; their lengths were checked when planned.
+        return None
     words_per_second = FIXED_WORDS_PER_SECOND
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
