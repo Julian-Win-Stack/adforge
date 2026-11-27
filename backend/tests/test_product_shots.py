@@ -7,13 +7,15 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from adforge.file_store import read
 from agents.models import ToolCall
 from agents.scene_forms import SILENT_PICTURE_OPENING, SilentVideoForm, silent_video_prompt
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.types import ClipFailed
-from jobs import product_shots
+from jobs import assembly, product_shots
 from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.planning import END_CARD_SECONDS
 
 from .conftest import (
     NO_CHOICES,
@@ -24,6 +26,7 @@ from .conftest import (
     paid_for,
     recorded,
     results_of,
+    video,
 )
 from .test_h3_planning import h3_plan
 from .test_scene_pictures import PICTURE_PASSES
@@ -537,3 +540,96 @@ def test_a_chat_pinned_to_person_talking_never_makes_product_shots(
     assert "Person talking" in results_of("choose_ad_style")[-1]
     assert results_of("plan_product_shots")[-1].startswith("Refused")
     assert Job.objects.get().ad_style == "person_talking"
+
+
+def test_a_filmed_product_shots_ad_is_put_together_with_its_overlays_and_the_music_alone(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    filmed_product_shots(producer, fake_model, product_page_url)
+
+    def clips_are_not_listened_to(media: object) -> bool:
+        raise AssertionError("a product-shots ad plays the music only")
+
+    monkeypatch.setattr(assembly, "has_sound", clips_are_not_listened_to)
+    volumes = []
+    fit_the_music = assembly.music_filters
+
+    def music_filters(music_seconds: float, ad_seconds: float, volume: float) -> str:
+        volumes.append(volume)
+        return fit_the_music(music_seconds, ad_seconds, volume)
+
+    monkeypatch.setattr(assembly, "music_filters", music_filters)
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
+
+    (ad,) = Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
+    # Each clip cut to its planned length, with its overlay, then the end card.
+    assert [(cut["start"], cut["end"], cut["overlay"]) for cut in ad.cuts] == [
+        (0.0, 4.0, "Hand-thrown"),
+        (4.0, 9.0, "Holds 350 ml"),
+        (9.0, 13.0, ""),
+    ]
+    assert ad.captions == []
+    assert volumes == [product_shots.MUSIC_ALONE_VOLUME]
+    told = results_of("assemble_ad")[-1]
+    assert "the music alone" in told
+    assert "captions" not in told and "voice" not in told
+    assert ad.seconds == 13.0 + END_CARD_SECONDS
+    width, height, seconds = video(read(ad.file))
+    assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
+    assert seconds == pytest.approx(13.0 + END_CARD_SECONDS, abs=1.0)
+
+
+def test_a_changed_overlay_makes_a_new_version_without_filming_again(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    filmed_product_shots(producer, fake_model, product_page_url)
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
+    fake_model.respond("fact_check", facts_ok(1))
+
+    producer.told(
+        "Make scene 1 say Made by hand",
+        ("edit_scene", {"scene": 1, "overlay": "Made by hand", "owner_asked": True}),
+        ("run_planning_checks", NO_CHOICES),
+        ("assemble_ad", {}),
+        "Here's the new version.",
+    )
+
+    ads = list(
+        Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("version")
+    )
+    assert [ad.version for ad in ads] == [1, 2]
+    assert ads[-1].cuts[0]["overlay"] == "Made by hand"
+    assert paid_for().count("make_broll_clip") == 3
+
+
+def test_an_ad_put_together_again_from_the_same_scenes_is_not_made_twice(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    filmed_product_shots(producer, fake_model, product_page_url)
+
+    producer.told("Put it together", ("assemble_ad", {}), ("assemble_ad", {}), "Here's your ad!")
+
+    assert Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD).count() == 1
+
+
+def test_a_clip_shorter_than_planned_shortens_the_ad_and_tells_the_developer(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    filmed_product_shots(producer, fake_model, product_page_url)
+    ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP, scene__number=1).update(seconds=3.0)
+
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad!")
+
+    (ad,) = Job.objects.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD)
+    assert [(cut["start"], cut["end"]) for cut in ad.cuts] == [(0.0, 3.0), (3.0, 8.0), (8.0, 12.0)]
+    assert any(
+        "Scene 1's clip lasts 3 seconds, shorter than the 4 seconds planned" in text
+        for _, text in recorded(api, session_id)
+    )

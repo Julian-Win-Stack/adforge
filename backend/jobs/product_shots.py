@@ -3,9 +3,11 @@ music, no presenter and no spoken line. Its planned lengths, its music and its p
 check; its scenes are made by the scene agent (agents/scene_agent/silent.py)."""
 
 import math
+from collections.abc import Sequence
 
 from django.db import transaction
 
+from . import assembly
 from .checks import LineToCheck
 from .models import AdStyle, Job, ProducedItem, Scene, SceneStep
 from .planning import END_CARD_SECONDS
@@ -17,6 +19,8 @@ MUSIC_FOR_THE_STYLE = (
     "spoken words."
 )
 MUSIC_PROMPT = "{mood}. " + MUSIC_FOR_THE_STYLE
+# The music plays alone under a product-shots ad, so it is played near full level.
+MUSIC_ALONE_VOLUME = 0.9
 # The music runs this much longer than the planned ad, so it never ends before the end card.
 MUSIC_SPARE_SECONDS = 3
 
@@ -149,3 +153,31 @@ def check_overlays(job: Job) -> str | None:
     job.status = Job.Status.READY_TO_RENDER
     job.save(update_fields=["status"])
     return None
+
+
+def cuts(clips: Sequence[ProducedItem]) -> list[assembly.Cut]:
+    """Each silent scene's clip cut to its planned length (or its whole length, if shorter),
+    one after another, with the scene's overlay. A silent scene has no voice."""
+    planned = []
+    start = 0.0
+    for clip in clips:
+        assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
+        length = round(min(planned_seconds(clip.scene), clip.seconds), 3)
+        end = round(start + length, 3)
+        planned.append(
+            assembly.Cut(
+                scene=clip.scene.number,
+                clip=clip.pk,
+                clip_start=0.0,
+                clip_end=length,
+                start=start,
+                end=end,
+                overlay=clip.scene.overlay,
+                voice_clip_start=0.0,
+                voice_clip_end=0.0,
+                voice_start=start,
+                voice_end=end,
+            )
+        )
+        start = end
+    return planned
