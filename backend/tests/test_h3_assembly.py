@@ -38,10 +38,11 @@ def test_the_producer_is_told_the_assembly_contract_without_retired_cuts(
 
     offered = next(tool for tool in fake_model.turns_taken[0].tools if tool.name == "assemble_ad")
     assert offered.description == (
-        "Assemble the finished ad from every scene's clip, in order, with captions of the\n"
-        "written line timed from its transcript, the music under the voice and each scene's\n"
-        "overlay, and show it to the shop owner in the chat. Only once every scene is\n"
-        "finished and the music is made. Costs nothing."
+        "Assemble the finished ad from every scene's clip, in order, with each scene's overlay,\n"
+        "the music and the end card, and show it to the shop owner in the chat. A person-talking\n"
+        "ad has captions of the written line timed from its transcript and the music under the\n"
+        "voice; a product-shots ad has each clip cut to its planned length and the music alone.\n"
+        "Only once every scene is finished and the music is made. Costs nothing."
     )
 
 
