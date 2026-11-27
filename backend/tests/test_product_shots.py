@@ -2,8 +2,11 @@
 line, planned by the producer itself. Driven through the chat, with the producer and the
 scene agents scripted and every outside service faked."""
 
+import io
 from typing import Any
 
+import PIL.Image
+import PIL.ImageChops
 import pytest
 from rest_framework.test import APIClient
 
@@ -12,8 +15,8 @@ from agents.models import ToolCall
 from agents.scene_forms import SILENT_PICTURE_OPENING, SilentVideoForm, silent_video_prompt
 from chat.models import Session
 from gateway.fake import FakeModel, turn
-from gateway.types import ClipFailed
-from jobs import assembly, product_shots
+from gateway.types import BlockedBySafetyFilter, ClipFailed
+from jobs import assembly, product_shots, real_photo
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.planning import END_CARD_SECONDS
 
@@ -37,6 +40,7 @@ THREE_SCENES: list[dict[str, Any]] = [
     {
         "shows": "The mug alone on pale stone, the light crossing its glaze.",
         "photo": 1,
+        "start": "ai scene",
         "move": "push in",
         "overlay": "Hand-thrown",
         "seconds": 4,
@@ -44,6 +48,7 @@ THREE_SCENES: list[dict[str, Any]] = [
     {
         "shows": "The mug from the side, its handle in soft window light.",
         "photo": 2,
+        "start": "ai scene",
         "move": "pull back",
         "overlay": "Holds 350 ml",
         "seconds": 5,
@@ -51,6 +56,7 @@ THREE_SCENES: list[dict[str, Any]] = [
     {
         "shows": "The mug on a breakfast table, steam rising.",
         "photo": 1,
+        "start": "ai scene",
         "move": "push in",
         "overlay": "",
         "seconds": 4,
@@ -633,3 +639,167 @@ def test_a_clip_shorter_than_planned_shortens_the_ad_and_tells_the_developer(
         "Scene 1's clip lasts 3 seconds, shorter than the 4 seconds planned" in text
         for _, text in recorded(api, session_id)
     )
+
+
+# One real-photo scene: the mug's side photo (1,600 x 1,200, cream), far wider than the tall
+# frame, so its background is extended above and below it.
+REAL_PHOTO_SCENE: dict[str, Any] = {
+    "shows": "The shop's own photo of the mug from the side, light crossing its glaze.",
+    "photo": 2,
+    "start": "real photo",
+    "move": "push in",
+    "overlay": "",
+    "seconds": 4,
+}
+
+
+def one_scene_started(
+    producer: ScriptedProducer, fake: FakeModel, link: str, scene: dict[str, Any], *agent: Any
+) -> None:
+    """A one-scene product-shots ad planned, checked and its music made, its scene agent
+    taking `agent`'s turns when its scene is started."""
+    fake.respond("check_page", READABLE)
+    fake.respond("fact_check", facts_ok(1))
+    fake.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake.respond("scene_agent", *agent)
+    producer.told(
+        f"Make a product-shots ad for {link}",
+        ("read_page", {"link": link, "target_seconds": None}),
+        ("choose_ad_style", CHOSEN),
+        ("plan_product_shots", plan([scene])),
+        ("run_planning_checks", NO_CHOICES),
+        ("create_music", {"mood": "calm warm piano"}),
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Film the planned shot.", "quotes": [link]},
+        ),
+        "I'm making your ad.",
+    )
+
+
+def opened(key: str) -> PIL.Image.Image:
+    with PIL.Image.open(io.BytesIO(read(key))) as picture:
+        return picture.convert("RGB")
+
+
+def test_a_real_photo_scene_starts_on_the_shops_own_pixels_and_films_a_move_over_them(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    one_scene_started(
+        producer,
+        fake_model,
+        product_page_url,
+        REAL_PHOTO_SCENE,
+        turn(calls=[("use_real_photo", {"focus_x": 50, "focus_y": 50})]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.woken("Scene 1 is filmed.")
+
+    scene = Scene.objects.get(number=1)
+    (picture,) = scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE)
+    start = opened(picture.file)
+    assert start.size == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
+    # The cream side photo (1,600 x 1,200) lies across the frame's width, 810 rows tall from
+    # row 555, its own pixels kept away from the faded seams; the picture model drew only the
+    # bands above and below.
+    middle = start.crop((0, 555 + 30, assembly.FRAME_WIDTH, 555 + 810 - 30))
+    assert middle.getcolors() == [(middle.width * middle.height, (236, 229, 206))]
+    assert start.getpixel((10, 10)) != (236, 229, 206)
+    assert start.getpixel((10, assembly.FRAME_HEIGHT - 10)) != (236, 229, 206)
+    assert paid_for().count("extend_real_photo") == 1
+    assert "draw_scene_picture" not in paid_for()
+    # Filmed between the picture and a crop of it.
+    clip = scene.produced.get(kind=ProducedItem.Kind.CLIP)
+    sent = clip.sent or {}
+    assert sent["starting_picture"]["file"] == picture.file
+    assert sent["end_picture"]["file"] != picture.file
+
+
+def test_a_real_photo_that_cant_be_fitted_is_drawn_instead_and_the_owner_is_told(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from .conftest import chat
+
+    # The front photo is 400 pixels wide: under this bar, too small to fill the frame.
+    monkeypatch.setattr(real_photo, "SMALLEST_WIDTH", 500)
+    one_scene_started(
+        producer,
+        fake_model,
+        product_page_url,
+        {**REAL_PHOTO_SCENE, "photo": 1},
+        turn(calls=[("draw_silent_picture", SILENT_PICTURE)]),
+        turn(calls=[("use_real_photo", {})]),
+        turn(calls=[("draw_silent_picture", SILENT_PICTURE)]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.woken("Scene 1 is filmed.")
+
+    told = results_of("draw_silent_picture")
+    assert told[0].startswith("Refused") and "use_real_photo" in told[0]
+    assert results_of("use_real_photo")[-1].startswith("Refused")
+    assert not told[-1].startswith("Refused")
+    assert Scene.objects.get(number=1).produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+    assert any(
+        "Scene 1 couldn't start on your photo" in text and "drawn from your photos" in text
+        for _, text in chat(api, session_id)
+    )
+
+
+def test_pixels_that_cant_be_pasted_back_fall_back_to_a_drawn_picture_with_notices(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .conftest import chat
+
+    fake_model.respond("extend_real_photo", BlockedBySafetyFilter("content_policy_violation"))
+    one_scene_started(
+        producer,
+        fake_model,
+        product_page_url,
+        REAL_PHOTO_SCENE,
+        turn(calls=[("use_real_photo", {})]),
+        turn(
+            calls=[
+                (
+                    "draw_silent_picture",
+                    {**SILENT_PICTURE, "picks": [{"item": 2, "take": "the mug's exact shape"}]},
+                )
+            ]
+        ),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.woken("Scene 1 is filmed.")
+
+    assert results_of("use_real_photo")[-1].startswith("Refused")
+    assert any(
+        "safety filter refused to look at library item 2" in text
+        for _, text in recorded(api, session_id)
+    )
+    assert any("Scene 1 couldn't start on your photo" in text for _, text in chat(api, session_id))
+    assert Scene.objects.get(number=1).produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+
+
+def test_an_ai_scene_cant_start_on_the_real_photo(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    one_scene_started(
+        producer,
+        fake_model,
+        product_page_url,
+        THREE_SCENES[0],
+        turn(calls=[("use_real_photo", {})]),
+        turn(calls=[("draw_silent_picture", SILENT_PICTURE)]),
+        turn(calls=[("film_silent", SILENT_FILM)]),
+    )
+    producer.woken("Scene 1 is filmed.")
+
+    assert results_of("use_real_photo")[-1].startswith("Refused")
+    assert "extend_real_photo" not in paid_for()

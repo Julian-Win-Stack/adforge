@@ -17,6 +17,7 @@ from jobs.product_shots import is_product_shots
 
 from .loop import Refused, Tool
 from .models import ToolCall
+from .scene_agent.silent import Start
 from .scene_forms import CameraMove
 
 # The most silent scenes in one plan.
@@ -30,6 +31,11 @@ class SilentScenePlan(BaseModel):
 
     shows: str = Field(min_length=1, description="What the scene shows, in plain words.")
     photo: int = Field(description="The library number of the product photo the scene starts from.")
+    start: Start = Field(
+        description='"real photo": the scene starts on the shop\'s own photo itself, its '
+        'pixels kept, with a slow camera move over it. "ai scene": a new picture drawn from '
+        "the photos, in a setting the photos don't show."
+    )
     move: CameraMove = Field(description="The slow camera move.")
     overlay: str = Field(
         description="The few words drawn on the scene, in the page's or the shop owner's own "
@@ -191,6 +197,7 @@ class PlanProductShots(Tool):
                     overlay=" ".join(scene.overlay.split()),
                     silent={
                         "photo": scene.photo,
+                        "start": scene.start,
                         "move": scene.move,
                         "seconds": round(scene.seconds, 2),
                     },
@@ -220,7 +227,8 @@ class PlanProductShots(Tool):
                 ]
             )
         listed = "\n".join(
-            f"{number}. {scene.seconds:g} s from library item {scene.photo}, {scene.move}: "
+            f"{number}. {scene.seconds:g} s, {scene.start} from library item {scene.photo}, "
+            f"{scene.move}: "
             f"{scene.shows}" + (f' Overlay: "{scene.overlay}".' if scene.overlay else "")
             for number, scene in enumerate(self.scenes, 1)
         )

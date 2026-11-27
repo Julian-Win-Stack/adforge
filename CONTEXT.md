@@ -104,8 +104,12 @@ One part of a job's ad and everything produced for it. A person-talking ad's sce
 _Avoid_: Shot, beat, clip, segment
 
 **Silent scene**:
-A product-shots ad's scene: what it shows, the product photo it starts from, a slow camera move, an optional overlay and its length in seconds. No presenter, no spoken line, no voice. A scene agent makes it like any scene.
+A product-shots ad's scene: what it shows, the product photo it starts from, whether it starts on the **real photo** or an **AI scene**, a slow camera move, an optional overlay and its length in seconds. No presenter, no spoken line, no voice. A scene agent makes it like any scene.
 _Avoid_: Product shot, hero shot, B-roll
+
+**Real photo** (of a silent scene):
+The shop's own product photo used as the scene's starting picture, its pixels kept: code crops it to the tall frame, or the picture model extends its background and code pastes the photo back over it. The opposite is an **AI scene**, a starting picture drawn from the photos.
+_Avoid_: Hero photo, original
 
 **Talking scene**:
 A scene in which the presenter speaks to camera, face in frame, while showing, using or showing the result of the product. The first scene is always talking. Each names a **Talking style** and a **Product state**.

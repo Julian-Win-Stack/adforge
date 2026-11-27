@@ -30,7 +30,13 @@ from .instructions import INSTRUCTIONS, instructions_for
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 from .make_end_picture import MakeEndPicture
-from .silent import SILENT_INSTRUCTIONS, DrawSilentPicture, FilmSilent, scene_facts
+from .silent import (
+    SILENT_INSTRUCTIONS,
+    DrawSilentPicture,
+    FilmSilent,
+    UseRealPhoto,
+    scene_facts,
+)
 
 PENDING_NOTE_DELIVERED = SceneAgentRun.PENDING_DELIVERED
 AGENT = "scene_agent"
@@ -50,6 +56,7 @@ TOOLS: list[type[loop.Tool]] = [
 SILENT_TOOLS: list[type[loop.Tool]] = [
     LookAtLibrary,
     LookAtTry,
+    UseRealPhoto,
     DrawSilentPicture,
     FilmSilent,
     GiveUp,
@@ -58,7 +65,7 @@ AGENT_SPEC = loop.Agent(
     name=AGENT,
     purpose=PURPOSE,
     instructions=INSTRUCTIONS,
-    tools=[*TOOLS, DrawSilentPicture, FilmSilent],
+    tools=[*TOOLS, UseRealPhoto, DrawSilentPicture, FilmSilent],
 )
 
 

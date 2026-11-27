@@ -162,9 +162,12 @@ is the style, and a new ask changes it. Demo ads are not offered. Tell the owner
 and why in one short sentence, then carry on without waiting.
 For product shots, write the scenes yourself with plan_product_shots: build the story on \
 the listing's most unusual selling point, and write every overlay in the page's or the \
-owner's own words. Then run_planning_checks, create_music in the plan's mood, and \
-start_scene_agent for every scene together. No person is created for product shots. The \
-rules below about the person, lines, talking and B-roll scenes are for person-talking ads."""
+owner's own words. Start a scene on the real photo wherever the buyer must trust what they \
+see: the exact product, its size beside something known, the product worn in the shop's \
+photo; an AI scene only for a mood or setting no photo shows. Then run_planning_checks, \
+create_music in the plan's mood, and start_scene_agent for every scene together. No person \
+is created for product shots. The rules below about the person, lines, talking and B-roll \
+scenes are for person-talking ads."""
 
 INSTRUCTIONS = (
     OWNER_WORDS_RULE
