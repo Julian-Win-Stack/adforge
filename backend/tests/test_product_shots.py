@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from agents.models import ToolCall
 from agents.scene_forms import SILENT_PICTURE_OPENING, SilentVideoForm, silent_video_prompt
+from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.types import ClipFailed
 from jobs import product_shots
@@ -24,6 +25,7 @@ from .conftest import (
     recorded,
     results_of,
 )
+from .test_h3_planning import h3_plan
 from .test_scene_pictures import PICTURE_PASSES
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -51,6 +53,16 @@ THREE_SCENES: list[dict[str, Any]] = [
         "seconds": 4,
     },
 ]
+
+
+# The producer's choose_ad_style arguments for a product-shots ad.
+CHOSEN = {
+    "doubts": ["Is it beautiful enough to want?", "Will it last?"],
+    "chosen_doubt": "Is it beautiful enough to want?",
+    "style": "product shots",
+    "reason": "Your mug sells on its looks, so it's shown at its best.",
+    "owner_asked": True,
+}
 
 
 def plan(scenes: list[dict[str, Any]] = THREE_SCENES, **changes: Any) -> dict[str, Any]:
@@ -109,6 +121,7 @@ def planned_product_shots(
     producer.told(
         f"Make a product-shots ad for {link}",
         ("read_page", {"link": link, "target_seconds": None}),
+        ("choose_ad_style", CHOSEN),
         ("plan_product_shots", plan(scenes)),
         "Here's the plan.",
     )
@@ -123,6 +136,7 @@ def filmed_product_shots(producer: ScriptedProducer, fake: FakeModel, link: str)
     producer.told(
         f"Make a product-shots ad for {link}",
         ("read_page", {"link": link, "target_seconds": None}),
+        ("choose_ad_style", CHOSEN),
         ("plan_product_shots", plan()),
         ("run_planning_checks", NO_CHOICES),
         ("create_music", {"mood": "calm warm piano"}),
@@ -238,7 +252,8 @@ def test_a_longer_ad_with_more_scenes_is_planned_and_a_new_plan_replaces_the_old
 
     job = Job.objects.get()
     assert job.scenes.count() == 5
-    assert job.target_seconds == 30  # 5 x 5.5 s and the 2 s end card
+    assert product_shots.ad_seconds(job) == 29.5  # 5 x 5.5 s and the 2 s end card
+    assert job.target_seconds is None  # the owner's own target is kept
     assert Scene.with_removed.filter(job=job, removed_at__isnull=False).count() == 3
 
 
@@ -251,13 +266,13 @@ def test_a_plan_naming_a_photo_the_library_does_not_hold_is_refused(
     producer.told(
         f"Make a product-shots ad for {product_page_url}",
         ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("choose_ad_style", CHOSEN),
         ("plan_product_shots", plan(bad)),
         "I'll fix the plan.",
     )
 
     assert results_of("plan_product_shots")[-1].startswith("Refused")
     assert not Job.objects.get().scenes.exists()
-    assert Job.objects.get().ad_style == "person_talking"
 
 
 def test_a_note_on_a_silent_scene_opens_another_run_of_its_agent(
@@ -413,6 +428,7 @@ def test_a_clip_the_video_model_refuses_is_told_to_the_developer_record(
     producer.told(
         f"Make a product-shots ad for {product_page_url}",
         ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("choose_ad_style", CHOSEN),
         ("plan_product_shots", plan(THREE_SCENES[:1])),
         ("run_planning_checks", NO_CHOICES),
         ("create_music", {"mood": "calm warm piano"}),
@@ -429,3 +445,95 @@ def test_a_clip_the_video_model_refuses_is_told_to_the_developer_record(
         "refused scene 1's clip" in text and "H3 rejected the picture pair" in text
         for _, text in recorded(api, session_id)
     )
+
+
+def test_the_style_is_chosen_from_the_buyers_doubt_and_kept_for_the_developer(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    chosen = {**CHOSEN, "owner_asked": False}
+
+    producer.told(
+        f"Make an ad for {product_page_url}",
+        ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("choose_ad_style", chosen),
+        "Product shots: your mug sells on its looks.",
+    )
+
+    job = Job.objects.get()
+    assert job.ad_style == "product_shots"
+    assert job.style_choice == {
+        "doubts": chosen["doubts"],
+        "chosen": chosen["chosen_doubt"],
+        "style": "product_shots",
+        "why": chosen["reason"],
+        "owner_asked": False,
+    }
+    told = results_of("choose_ad_style")[-1]
+    assert '"Product shots"' in told and "plan_product_shots" in told
+
+
+def test_a_doubt_not_among_those_named_is_refused(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    fake_model.respond("check_page", READABLE)
+
+    producer.told(
+        f"Make an ad for {product_page_url}",
+        ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("choose_ad_style", {**CHOSEN, "chosen_doubt": "Is it cheap?"}),
+        "Let me choose again.",
+    )
+
+    assert results_of("choose_ad_style")[-1].startswith("Refused")
+    assert Job.objects.get().style_choice == {}
+
+
+def test_asking_for_a_person_talking_instead_switches_the_style_and_plans_again(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str
+) -> None:
+    planned_product_shots(producer, fake_model, product_page_url, THREE_SCENES)
+
+    producer.told(
+        "Make it a person talking instead",
+        (
+            "choose_ad_style",
+            {**CHOSEN, "style": "person talking", "reason": "You asked for a person."},
+        ),
+        "Person talking, as you asked.",
+    )
+
+    job = Job.objects.get()
+    assert job.ad_style == "person_talking"
+    assert job.shots_plan == {}
+    assert job.target_seconds is None
+    assert "earlier plan was taken out" in results_of("choose_ad_style")[-1]
+    assert "plan_ad" in results_of("choose_ad_style")[-1]
+
+    fake_model.respond("plan_ad", h3_plan())
+    producer.told("Go on", ("plan_ad", {}), "Here's the person-talking plan.")
+
+    job = Job.objects.get()
+    assert [scene.kind for scene in job.scenes.order_by("number")] == [
+        each["kind"] for each in h3_plan()["plan"]["scenes"]
+    ]
+    assert job.target_seconds is None
+
+
+def test_a_chat_pinned_to_person_talking_never_makes_product_shots(
+    producer: ScriptedProducer, fake_model: FakeModel, product_page_url: str, session_id: str
+) -> None:
+    Session.objects.filter(pk=session_id).update(pinned_ad_style="person_talking")
+    fake_model.respond("check_page", READABLE)
+
+    producer.told(
+        f"Make an ad for {product_page_url}",
+        ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("choose_ad_style", {**CHOSEN, "owner_asked": False}),
+        ("plan_product_shots", plan()),
+        "I'll plan a person talking.",
+    )
+
+    assert "Person talking" in results_of("choose_ad_style")[-1]
+    assert results_of("plan_product_shots")[-1].startswith("Refused")
+    assert Job.objects.get().ad_style == "person_talking"

@@ -114,6 +114,8 @@ def test_a_saved_link_reaches_a_checked_plan_and_durable_outputs_before_any_pict
     assert not ModelCall.objects.filter(model__startswith="gpt-image").exists()
     assert job.session is not None
     assert not job.session.producer_running
+    # Pinned to person talking, so it compares like with like with the baseline (#774).
+    assert job.session.pinned_ad_style == "person_talking"
     assert len(firecrawl.requests) == calls_before
     assert store.dump_path("first", scenario.key).stat().st_size > 0
     assert any(store.media_dir("first", scenario.key).rglob("*.jpg"))

@@ -232,6 +232,14 @@ class Job(models.Model):
         help_text="How the ad is made (Ad style, CONTEXT.md): a person talking to camera, the "
         "default, or product shots, silent scenes of the product with music and overlays.",
     )
+    style_choice = models.JSONField(
+        default=dict,
+        db_default={},
+        blank=True,
+        help_text="How the producer chose the ad style (Buyer's doubt, CONTEXT.md), for the "
+        'developer, never the shop owner: {"doubts": [...], "chosen": ..., "style": ..., '
+        '"why": ..., "owner_asked": ...}. Empty until it chooses.',
+    )
     shots_plan = models.JSONField(
         default=dict,
         blank=True,

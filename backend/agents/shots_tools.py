@@ -1,6 +1,8 @@
 """The producer's tool for planning a product-shots ad (spec #767, #770): it writes the
 silent scenes itself, from the page and the photos it was shown (ADR 0016)."""
 
+from typing import Literal
+
 from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +13,7 @@ from jobs.models import AdStyle, Job, Scene, SceneStep
 from jobs.pace import LONGEST_CLIP_SECONDS
 from jobs.plan_edits import _move_chat_scenes
 from jobs.planning import END_CARD_SECONDS
+from jobs.product_shots import is_product_shots
 
 from .loop import Refused, Tool
 from .models import ToolCall
@@ -56,6 +59,71 @@ def take_out_the_scenes(job: Job) -> None:
     _move_chat_scenes(job, dict.fromkeys(numbers))
 
 
+# The style labels the shop owner reads, by the producer's word for each.
+STYLES = {"product shots": AdStyle.PRODUCT_SHOTS, "person talking": AdStyle.PERSON_TALKING}
+
+
+class ChooseAdStyle(Tool):
+    """Choose the ad's style after the page is read, from the buyer's doubt: name the 2 or 3
+    doubts a first-time buyer has about this product, pick the one that matters most, and
+    take its style. A style the shop owner asked for in any message is the style. Kept for
+    the developer, never shown to the owner. Choosing a new style after the ad was planned
+    takes the old plan out, to be planned again."""
+
+    name = "choose_ad_style"
+
+    doubts: list[str] = Field(
+        min_length=2,
+        max_length=3,
+        description="The 2 or 3 doubts a first-time buyer has about this product, each in "
+        'the buyer\'s words, such as "is it beautiful enough to want?".',
+    )
+    chosen_doubt: str = Field(description="The doubt that matters most, one of `doubts`.")
+    style: Literal["product shots", "person talking"] = Field(
+        description='"product shots" answers "is it beautiful, do I want it?"; "person '
+        'talking" answers "can I trust it, is it worth it?".'
+    )
+    reason: str = Field(min_length=1, description="One sentence, for the shop owner, on why.")
+    owner_asked: bool = Field(
+        description="True when the shop owner asked for this style in their own words."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        from .producer import _with_its_page
+
+        job = _with_its_page(call, "the style is chosen from the page")
+        if self.chosen_doubt not in self.doubts:
+            raise Refused("chosen_doubt must be one of the doubts you named, word for word.")
+        style = STYLES[self.style]
+        pinned = call.session.pinned_ad_style
+        if pinned and style != pinned:
+            raise Refused(f'this chat makes "{AdStyle(pinned).label}" ads only. Choose that style.')
+        changed = job.ad_style != style
+        planned = changed and job.scenes.exists()
+        with transaction.atomic():
+            if planned:
+                take_out_the_scenes(job)
+            job.ad_style = style
+            if changed:
+                # The plan of the other style goes with it; the owner's own target stays.
+                job.shots_plan = {}
+            job.style_choice = {
+                "doubts": self.doubts,
+                "chosen": self.chosen_doubt,
+                "style": style,
+                "why": " ".join(self.reason.split()),
+                "owner_asked": self.owner_asked,
+            }
+            job.save(update_fields=["ad_style", "shots_plan", "style_choice"])
+        label = AdStyle(style).label
+        plan_with = "plan_product_shots" if style == AdStyle.PRODUCT_SHOTS else "plan_ad"
+        again = " The earlier plan was taken out." if planned else ""
+        return (
+            f'The ad style is "{label}".{again} Tell the shop owner in one short sentence: '
+            f'"{label}", and why, then plan it with {plan_with} without waiting.'
+        )
+
+
 class PlanProductShots(Tool):
     """Plan a product-shots ad yourself, when it is the ad's style: silent scenes of the
     product with no presenter and no spoken line; code draws the overlays, the music plays
@@ -89,6 +157,8 @@ class PlanProductShots(Tool):
         from .producer import _with_its_page
 
         job = _with_its_page(call, "a product-shots ad is planned from the page")
+        if not is_product_shots(job):
+            raise Refused('choose the "Product shots" style with choose_ad_style first.')
         if not 1 <= len(self.scenes) <= MOST_SCENES:
             raise Refused(f"plan from 1 to {MOST_SCENES} scenes.")
         photos = sorted(
@@ -127,7 +197,6 @@ class PlanProductShots(Tool):
                 )
                 for number, scene in enumerate(self.scenes, 1)
             )
-            job.ad_style = AdStyle.PRODUCT_SHOTS
             job.shots_plan = {
                 "story": self.story.strip(),
                 "built_on": self.built_on.strip(),
@@ -138,18 +207,15 @@ class PlanProductShots(Tool):
             job.product_photos = list(dict.fromkeys(scene.photo for scene in self.scenes))
             job.end_card_line = " ".join(self.end_card_line.split())
             job.end_card_price = self.end_card_price.strip()
-            job.target_seconds = round(total)
             job.status = Job.Status.PLANNED
             job.save(
                 update_fields=[
-                    "ad_style",
                     "shots_plan",
                     "product_name",
                     "product_colour",
                     "product_photos",
                     "end_card_line",
                     "end_card_price",
-                    "target_seconds",
                     "status",
                 ]
             )
