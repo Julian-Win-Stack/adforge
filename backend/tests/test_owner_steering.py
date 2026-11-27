@@ -53,84 +53,132 @@ def test_an_owner_requested_plan_change_after_the_ad_is_shown_is_kept_without_sp
     assert steps.held == []
 
 
-@pytest.mark.parametrize(
-    ("purpose", "owner_line", "reason"),
-    [
-        ("shorten_line", " ".join(["Our mug holds tea"] * 14) + ".", "long"),
-    ],
-)
-def test_owner_words_reach_the_line_rewriter_and_a_forced_change_is_explained(
+# An owner's exact line too long for one clip: 14 times "Our mug holds tea", about 20 s.
+LONG_OWNER_LINE = " ".join(["Our mug holds tea"] * 14) + "."
+
+
+def owner_line_too_long(fake_model: FakeModel, say: Callable[..., None]) -> None:
+    """After the first ad, the owner gives scene 2 an exact line too long for one clip, and
+    the planning checks run on it."""
+    from .conftest import NO_CHOICES, facts_ok
+
+    owner_says(
+        fake_model,
+        say,
+        f'Scene 2 must say exactly: "{LONG_OWNER_LINE}"',
+        ("edit_scene", {"scene": 2, "line": LONG_OWNER_LINE, "owner_asked": True}),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    owner_says(fake_model, say, "Go on.", ("run_planning_checks", NO_CHOICES))
+
+
+def test_an_owners_too_long_line_is_never_cut_and_the_owner_is_asked(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+) -> None:
+    owner_line_too_long(fake_model, say)
+
+    assert "shorten_line" not in paid_for()
+    assert Scene.objects.get(number=2).line == LONG_OWNER_LINE
+    told = answer_of("run_planning_checks")
+    assert not told.startswith("The checks passed")
+    assert LONG_OWNER_LINE in told and "shorten_owner_line" in told
+
+
+def test_an_owner_who_chooses_shorten_gets_the_line_shortened_and_is_told(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Callable[..., None],
     api: Any,
     session_id: str,
-    purpose: str,
-    owner_line: str,
-    reason: str,
 ) -> None:
-    from .conftest import NO_CHOICES, chat, facts_ok, handoffs
-    from .test_producer_checks import failing
+    from .conftest import chat, handoffs
 
-    corrected = "This mug costs twenty four dollars and holds your favourite morning tea."
-    owner_says(
-        fake_model,
-        say,
-        f'Scene 2 must say exactly: "{owner_line}"',
-        ("edit_scene", {"scene": 2, "line": owner_line, "owner_asked": True}),
-    )
-    if purpose == "rewrite_line":
-        fake_model.respond("fact_check", failing(2, "The price is wrong."), facts_ok(2))
-        fake_model.respond(
-            purpose,
-            {
-                "line": corrected,
-                "shows": Scene.objects.get(number=2).shows,
-                "broll_kind": "showcase",
-                "person_shown": "no face",
-            },
-        )
-    else:
-        fake_model.respond("fact_check", facts_ok(2), facts_ok(2))
-        fake_model.respond(purpose, {"line": corrected})
-    owner_says(fake_model, say, "Go on.", ("run_planning_checks", NO_CHOICES))
-    assert owner_line in handoffs(purpose)[-1]["owner_words"]
+    owner_line_too_long(fake_model, say)
+    shorter = "Our mug holds your favourite morning tea, hot and ready."
+    fake_model.respond("shorten_line", {"line": shorter})
+
+    owner_says(fake_model, say, "Shorten it.", ("shorten_owner_line", {"scene": 2}))
+
+    assert Scene.objects.get(number=2).line == shorter
+    assert LONG_OWNER_LINE in handoffs("shorten_line")[-1]["owner_words"]
     visible = " ".join(text for _, text in chat(api, session_id))
-    assert owner_line in visible and corrected in visible
-    assert reason in visible.lower()
+    assert LONG_OWNER_LINE in visible and shorter in visible
 
 
-def test_a_second_rewrite_keeps_the_original_owner_line_after_the_first_rewrite(
+def test_an_owner_who_chooses_split_keeps_every_word_across_two_scenes(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Callable[..., None],
 ) -> None:
-    from .conftest import NO_CHOICES, facts_ok, handoffs
-    from .test_producer_checks import failing
+    from .conftest import NO_CHOICES, facts_ok
 
-    original = " ".join(["Our mug holds tea"] * 14) + "."
-    shorter = "This mug costs nineteen dollars and holds your favourite morning tea."
-    corrected = "This mug costs twenty four dollars and holds your favourite morning tea."
+    owner_line_too_long(fake_model, say)
+    words = LONG_OWNER_LINE.split()
+    first, second = " ".join(words[:28]), " ".join(words[28:])
+    fake_model.respond("fact_check", facts_ok(2, 3))
+
     owner_says(
         fake_model,
         say,
-        f'Use exactly "{original}" for scene 2.',
-        ("edit_scene", {"scene": 2, "line": original, "owner_asked": True}),
+        "Split it.",
+        ("edit_scene", {"scene": 2, "line": first, "owner_asked": True}),
+        (
+            "add_scene",
+            {
+                "at": 3,
+                "line": second,
+                "shows": "A hand lifts the mug from the table.",
+                **AS_BROLL,
+                "owner_asked": True,
+            },
+        ),
+        ("run_planning_checks", NO_CHOICES),
     )
-    fake_model.respond("fact_check", facts_ok(2), failing(2, "The price is wrong."), facts_ok(2))
-    fake_model.respond("shorten_line", {"line": shorter})
-    fake_model.respond(
-        "rewrite_line",
-        {
-            "line": corrected,
-            "shows": Scene.objects.get(number=2).shows,
-            "broll_kind": "showcase",
-            "person_shown": "no face",
-        },
+
+    lines = [scene.line for scene in Scene.objects.order_by("number")][1:3]
+    assert " ".join(lines) == LONG_OWNER_LINE
+    assert "shorten_line" not in paid_for()
+    assert answer_of("run_planning_checks").startswith("The checks passed")
+
+
+def test_shortening_an_owner_line_that_already_fits_is_refused(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+) -> None:
+    line = Scene.objects.get(number=2).line
+    owner_says(
+        fake_model,
+        say,
+        f'Scene 2 must say exactly: "{line}"',
+        ("edit_scene", {"scene": 2, "line": line, "owner_asked": True}),
+        ("shorten_owner_line", {"scene": 2}),
     )
-    owner_says(fake_model, say, "Go on.", ("run_planning_checks", NO_CHOICES))
-    assert original in handoffs("shorten_line")[-1]["owner_words"]
-    assert original in handoffs("rewrite_line")[-1]["owner_words"]
+
+    assert answer_of("shorten_owner_line").startswith("Refused:")
+    assert "shorten_line" not in paid_for()
+    assert Scene.objects.get(number=2).line == line
+
+
+def test_an_owner_line_still_too_long_after_shortening_is_handed_back_to_split(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from .conftest import recorded
+
+    owner_line_too_long(fake_model, say)
+    still_long = " ".join(["Our mug holds hot tea"] * 10) + "."
+    fake_model.respond("shorten_line", *[{"line": still_long}] * 3)
+
+    owner_says(fake_model, say, "Shorten it.", ("shorten_owner_line", {"scene": 2}))
+
+    assert "split it" in answer_of("shorten_owner_line")
+    assert any("still takes too long to say" in text for _, text in recorded(api, session_id))
 
 
 def test_an_owner_mark_does_not_lift_the_opening_lock_before_the_first_ad(

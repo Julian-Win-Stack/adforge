@@ -192,7 +192,8 @@ fixes in its same chat. Code draws the shared room and presenter pictures before
 Starting pictures and drawn parts need no owner's approval.
 Once every scene is finished, assemble the ad. When the planning checks hand back a failure,
 use the scene tools to replace or remove unsupported claims or split long lines, then check
-again; never ask the shop owner to resolve a check. Never assemble while a scene agent is
+again; never ask the shop owner to resolve a check, except when the check hands back says
+to ask them (their own exact line too long for one clip). Never assemble while a scene agent is
 working; wait until you are told how its latest run ended and what it cost.
 The plan can change at any step: edit_scene changes any of a scene's fields, and \
 add_scene, remove_scene and reorder_scenes change which scenes play and in what order. \
@@ -1055,7 +1056,8 @@ class RunPlanningChecks(Tool):
     """Check every scene against the page and its clip limit, then shorten toward the
     target length. Remaining fact or line-length failures are yours to fix: rewrite,
     split or remove scenes with the scene tools and run these checks again. Never ask the
-    shop owner to referee a failed check or supply a shorter line. If the ad still exceeds
+    shop owner to referee a failed check or supply a shorter line, except for their own exact
+    line too long for one clip, which they choose to split or shorten. If the ad still exceeds
     its target after shortening, it continues longer and code tells the owner its length."""
 
     name = "run_planning_checks"
@@ -1086,6 +1088,16 @@ class RunPlanningChecks(Tool):
             "line_length": "Split the scene or rewrite its line with the scene tools, then run "
             "the planning checks again. The clip limit applies to every scene, including "
             "talking scenes. Do not ask the shop owner.",
+            "owner_line_length": "Ask the shop owner, with splitting as your pick, in about "
+            'these words: "This line is too long for one clip. Split it into two scenes, '
+            'keeping every word (one extra clip)? Or shall I shorten it?" Make nothing for '
+            "this scene until they answer; the rest of the ad goes on. If they choose split: "
+            "cut the line at a natural break into consecutive pieces, every word kept in "
+            "order and each short enough for one clip (two pieces, more only if two are "
+            "still too long), with edit_scene for the first piece and add_scene right after "
+            "it for each other piece, owner_asked true. If they choose shorten: "
+            "shorten_owner_line. If they send a new line instead, use it as their new line. "
+            "Then run the planning checks again.",
         }[problem.about]
         text = f"{problem.detail} Why: {problem.reason} {fix}"
         post_notice(
@@ -1620,6 +1632,43 @@ class _SceneFields(_OwnerChange):
 
     def _fields(self) -> dict[str, Any]:
         return {name: getattr(self, name) for name in plan_edits.EDITABLE}
+
+
+class ShortenOwnerLine(Tool):
+    """Shorten the shop owner's own too-long line, only after they chose shortening over
+    splitting it. They are told the old line and the new one. Run the planning checks after."""
+
+    name = "shorten_owner_line"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        from jobs.owner_direction import keeps_exact_line
+
+        scene = _a_planned_scene(call, self.scene)
+        if not keeps_exact_line(scene):
+            raise Refused(f"scene {scene.number}'s line isn't the shop owner's own exact line.")
+        if work.fits_one_clip(scene.line):
+            raise Refused(f"scene {scene.number}'s line already fits one clip.")
+        fits = work.shorten_owner_line(scene.job, scene)
+        scene.refresh_from_db()
+        if not fits:
+            post_notice(
+                scene.job,
+                notices.PLANNING_CHECK_HANDED_BACK,
+                f"Scene {scene.number}'s line, the shop owner's own, still takes too long to "
+                "say after the shortenings the owner chose; the producer must split it.",
+                Message.Level.PROBLEM,
+                scene=scene.number,
+            )
+            return (
+                f'Scene {scene.number}\'s line was shortened to "{scene.line}" but still takes '
+                "too long to say: split it with edit_scene and add_scene."
+            )
+        return (
+            f'Scene {scene.number}\'s line is now "{scene.line}"; the owner was told. Run the '
+            "planning checks next."
+        )
 
 
 class EditScene(_SceneFields):
@@ -2805,6 +2854,7 @@ PRODUCER = Agent(
         RunPlanningChecks,
         CreateMusic,
         EditScene,
+        ShortenOwnerLine,
         AddScene,
         RemoveScene,
         ReorderScenes,
