@@ -24,7 +24,15 @@ from agents.scene_forms import (
 from chat.models import Message
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs import cut_and_send, library, library_items, notices, real_photo, scene_pictures
+from jobs import (
+    cut_and_send,
+    face_swap,
+    library,
+    library_items,
+    notices,
+    real_photo,
+    scene_pictures,
+)
 from jobs.models import ProducedItem, Scene
 from jobs.pace import LONGEST_CLIP_SECONDS, SHORTEST_CLIP_SECONDS
 
@@ -138,11 +146,14 @@ class UseRealPhoto(Tool):
         if window.starting_pictures >= window.starting_picture_limit:
             raise Refused(lifecycle.picture_tries_used_up(scene, window, "starting"))
         number = int((scene.silent or {})["photo"])
-        item = next(
+        original = next(
             (each for each in library_items.originals(scene.job) if each.number == number), None
         )
-        if item is None:
+        if original is None:
             raise Refused(f"library item {number} is no longer in the library.")
+        # The shop's own model shows as photographed, unless the owner asked for a made-up
+        # person, who is swapped in (#775).
+        item = face_swap.for_clip(scene.job, original, scene=scene.number)
         # A try that drew the bands before failing after is answered from its record.
         drawn = (
             ModelCall.objects.filter(
@@ -184,8 +195,8 @@ class UseRealPhoto(Tool):
             SelectedPhoto(
                 file=item.file,
                 line="Image 1: the shop's own product photo",
-                library_number=item.number,
-                original_file=item.file,
+                library_number=original.number,
+                original_file=original.file,
             )
         ]
         colour = cut_and_send.planned_colour(scene)

@@ -297,6 +297,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "cant_use_owner_files",
         "choose_ad_style",
         "plan_product_shots",
+        "make_up_a_person",
         "plan_ad",
         "create_person",
         "remake_person",
