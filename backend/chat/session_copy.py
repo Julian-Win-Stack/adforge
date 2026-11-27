@@ -129,6 +129,7 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
     *((Job, name) for name in ("firecrawl", "colours", "side_photos", "product_photos")),
     (Job, "length_kept_script"),
     (Job, "chosen_plan"),
+    (Job, "product_options"),
     (PlanCard, "card"),
     (PlanCard, "answer"),
     (Job, "warnings"),

@@ -288,6 +288,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "use_photos",
         "add_to_library",
         "cant_use_owner_files",
+        "show_plan_card",
+        "take_owners_idea",
         "plan_ad",
         "create_person",
         "remake_person",
