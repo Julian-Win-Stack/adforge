@@ -180,7 +180,8 @@ def _told(message: Message, kept: _Kept) -> str:
         f"{count} photo{'s' if count != 1 else ''} through the page panel, as the page couldn't "
         "be read from its link. The page is read: their text is the page text, and owner "
         f"photo{'s' if count != 1 else ''} {listed} {'are' if count != 1 else 'is'} the "
-        f"product photo{'s' if count != 1 else ''}."
+        f"product photo{'s' if count != 1 else ''}. Call see_page to read the page and see "
+        "its photos."
     )
     if count < FEWEST_SURE_PHOTOS:
         told += (

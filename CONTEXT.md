@@ -66,7 +66,7 @@ A model in a loop that chooses which tool to call next: the producer, and one sc
 _Avoid_: Bot, assistant
 
 **Producer**:
-The one agent the user talks to for the whole session. Reads the page, chooses and plans, creates the person and music, starts scene agents and passes them later notes, assembles the ad and tells the owner what changed and cost.
+The one agent the user talks to for the whole session. Reads the page (its text, and its product photos as real pictures), chooses and plans, creates the person and music, starts scene agents and passes them later notes, assembles the ad and tells the owner what changed and cost.
 _Avoid_: Orchestrator, main agent, "the agent"
 
 **Scene agent**:
@@ -74,7 +74,7 @@ The agent that owns one scene, talking or B-roll, for the ad's whole life in one
 _Avoid_: Director, fixing agent, worker
 
 **Look**:
-A call the producer makes on its own model to see a picture, a clip's frames, a version, a library item or a sent list. It answers in words only (what is wrong, root cause, a direction) and decides nothing, so the producer's conversation never holds pictures.
+A call the producer makes on its own model to see a picture, a clip's frames, a version, a library item or a sent list. It answers in words only (what is wrong, root cause, a direction) and decides nothing. The producer's conversation holds only the product photos it is given with the page (ADR 0016); every other picture, clip or version it sees through a look.
 _Avoid_: Decider, critic, look_at
 
 ### The work

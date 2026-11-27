@@ -29,6 +29,7 @@ from werkzeug import Request, Response
 from adforge import celery_app, file_store
 from agents import tasks
 from agents.models import ToolCall
+from agents.page_for_producer import PAGE_HEADING
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
@@ -878,8 +879,11 @@ def producer_turns() -> int:
 
 
 def results_of(tool: str) -> list[str]:
-    """What each call of `tool` handed back to the producer, oldest first."""
-    return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
+    """What each call of `tool` handed back to the producer, oldest first: what the tool
+    said, without the page and its photos that follow it once a page is read (ADR 0016,
+    tests/test_producer_sees_the_page.py)."""
+    results = ToolCall.objects.filter(tool=tool).values_list("result", flat=True)
+    return [result.split(f"\n\n{PAGE_HEADING}")[0] for result in results]
 
 
 # The clip judge's asks of a B-roll clip, judged against its sent list, as paid_for lists them
