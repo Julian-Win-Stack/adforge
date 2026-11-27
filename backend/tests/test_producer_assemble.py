@@ -364,10 +364,13 @@ def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
     assert (ad.made_from, music.seconds) == (music, 15 + END_CARD_SECONDS)
     heard = read(ad.file)
     assert video(heard)[2] == pytest.approx(17.0, abs=0.1)
-    # The music is heard all the way through, and the voice is clearly louder than it.
+    # The music is heard all the way through, and the voice is clearly louder than it while
+    # someone talks; on the end card, where no one does, the music rises well above that.
     assert loudness(heard, "music", between=(0, 4.5)) > -40
     assert loudness(heard, "music", between=(4.5, 9)) > -40
-    assert loudness(heard, "voice") - loudness(heard, "music") >= 10
+    under = loudness(heard, "music", between=(1, 4))
+    assert loudness(heard, "voice", between=(1, 4)) - under >= 10
+    assert loudness(heard, "music", between=(15.6, 16.8)) >= under + 10
 
 
 def test_the_ad_isnt_assembled_before_the_music_is_made(
