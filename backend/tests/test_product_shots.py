@@ -78,7 +78,7 @@ SILENT_PICTURE = {
         "anything_else": "not needed here",
     },
 }
-SILENT_FILM = {
+SILENT_FILM: dict[str, Any] = {
     "move": "push in",
     "crop_x": 50,
     "crop_y": 50,
