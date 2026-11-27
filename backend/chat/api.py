@@ -772,11 +772,19 @@ def check_clip(request: Request, session_id: str, scene: int) -> Response:
 
 class PlanCardAnswerSerializer(serializers.Serializer[None]):
     """What the plan card sends: "Use the agent's picks", or the choice in each question by
-    its key, an index from 0 ("Make this ad"). A question left out keeps the agent's pick."""
+    its key, an index from 0, or for the plans question the shop owner's own idea ("Make
+    this ad"). Another question left out keeps the agent's pick."""
 
     use_picks = serializers.BooleanField(required=False, default=False)
     choices = serializers.DictField(
         child=serializers.IntegerField(min_value=0), required=False, default=dict
+    )
+    idea = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=2 * plan_card.MOST_IDEA_CHARACTERS,
+        help_text="What the shop owner typed in the card's box instead of picking a plan.",
     )
 
 
@@ -795,7 +803,7 @@ def answer_plan_card(request: Request, session_id: str, card_id: int) -> Respons
         if another_session_is_busy(found):
             return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
         try:
-            message = plan_card.answer(card, choices)
+            message = plan_card.answer(card, choices, answering.validated_data["idea"])
         except plan_card.Replaced:
             post_notice(
                 card.job,

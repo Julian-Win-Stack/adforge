@@ -120,7 +120,7 @@ from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import AskedChangeFiling, ToolCall
 from .money import dollars
-from .plan_card import ShowPlanCard
+from .plan_card import ShowPlanCard, TakeOwnersIdea
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
 
@@ -2708,6 +2708,7 @@ PRODUCER = Agent(
         AddToLibrary,
         CantUseOwnerFiles,
         ShowPlanCard,
+        TakeOwnersIdea,
         PlanAd,
         CreatePerson,
         RemakePerson,

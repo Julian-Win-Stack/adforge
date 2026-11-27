@@ -175,3 +175,31 @@ test("a replaced card is greyed with its buttons off, and the newest one is open
     false,
   );
 });
+
+test("an idea typed in the box takes the place of a plan and is sent with Make this ad", async () => {
+  const posted = await session([LINK, said("agent", "", { plan_card: CARD })]);
+
+  const box = screen.getByRole("textbox", { name: "Or tell me what you'd rather have" });
+  await userEvent.type(box, "Someone drinking it on the train");
+
+  expect(screen.getAllByRole("radio").some((radio) => (radio as HTMLInputElement).checked)).toBe(
+    false,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Make this ad" }));
+  await waitFor(() => expect(posted).toHaveLength(1));
+  expect(posted[0].body).toEqual({ choices: {}, idea: "Someone drinking it on the train" });
+});
+
+test("with no plan picked and an empty box, Make this ad waits", async () => {
+  await session([LINK, said("agent", "", { plan_card: CARD })]);
+  const box = screen.getByRole("textbox", { name: "Or tell me what you'd rather have" });
+
+  await userEvent.type(box, "x");
+  await userEvent.clear(box);
+
+  expect(screen.getByRole("button", { name: "Make this ad" })).toHaveProperty("disabled", true);
+  // Picking a plan again is the answer, whatever the box holds.
+  await userEvent.type(box, "an idea");
+  await userEvent.click(screen.getByRole("radio", { name: /Hot all morning/ }));
+  expect(screen.getByRole("button", { name: "Make this ad" })).toHaveProperty("disabled", false);
+});

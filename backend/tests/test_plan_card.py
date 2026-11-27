@@ -278,3 +278,80 @@ def test_a_changed_plan_replaces_the_card_and_only_the_newest_takes_an_answer(
     producer.fake_model.respond("produce", turn(says="On it."))
     assert _answer(api, session_id, new["id"], use_picks=True).status_code == 201
     assert Job.objects.get().target_seconds == 30
+
+
+IDEA_PLAN = {
+    "style": "person_talking",
+    "seconds": 25,
+    "title": "Morning commute",
+    "built_on": "It keeps coffee hot for the whole commute.",
+    "opens": "Opens on a train platform at dawn.",
+    "doubt": "Will it really stay hot?",
+}
+
+
+def test_an_idea_typed_on_the_card_becomes_the_plan_and_unlocks_once_the_producer_takes_it(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(producer, product_page_url)
+    card_id = _the_card(api, session_id)["id"]
+    producer.fake_model.respond("plan_ad", PLAN)
+    producer.fake_model.respond(
+        "produce",
+        # Before it takes the idea, nothing can be planned.
+        turn(calls=[("plan_ad", {"why": "Too soon."})]),
+        turn(calls=[("take_owners_idea", {**IDEA_PLAN, "why": "Their idea."})]),
+        turn(calls=[("plan_ad", {"why": "The plan is theirs."})]),
+        turn(says="Here's the plan."),
+    )
+
+    answered = _answer(
+        api, session_id, card_id, choices={}, idea="Someone drinking it on the morning train"
+    )
+
+    assert answered.status_code == 201, answered.json()
+    assert chat(api, session_id)[-2] == (
+        "user",
+        "Which plan? My own idea: Someone drinking it on the morning train",
+    )
+    first, second = results_of("plan_ad")
+    assert "plan card must be shown and answered first" in first
+    assert _chosen()["idea"] == "Someone drinking it on the morning train"
+    assert _chosen()["plan"]["title"] == "Morning commute"
+    assert Job.objects.get().target_seconds == 25
+    assert Job.objects.get().scenes.count() == 3
+    assert "their own idea" in str(given_to_the_producer(3))
+
+
+def test_an_idea_that_cant_be_made_gets_a_reason_and_a_new_card(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(producer, product_page_url)
+    card_id = _the_card(api, session_id)["id"]
+    producer.fake_model.respond(
+        "produce",
+        turn(
+            says="I can't make a step-by-step demo yet, so here are 3 plans that can.",
+            calls=[("show_plan_card", {**CARD, "why": "The demo can't be made."})],
+        ),
+    )
+
+    _answer(api, session_id, card_id, choices={}, idea="Show someone using it step by step")
+
+    old, new = _cards(api, session_id)
+    assert old["state"] == "answered"
+    assert new["state"] == "open"
+    assert Job.objects.get().chosen_plan is None
+    assert not Job.objects.get().model_calls.filter(purpose="plan_ad").exists()
+
+
+def test_an_answer_with_neither_a_plan_nor_an_idea_is_refused(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(producer, product_page_url)
+    card_id = _the_card(api, session_id)["id"]
+
+    refused = _answer(api, session_id, card_id, choices={}, idea="   ")
+
+    assert refused.status_code == 400
+    assert Job.objects.get().chosen_plan is None

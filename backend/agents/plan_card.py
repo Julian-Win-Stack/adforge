@@ -96,7 +96,7 @@ class ShowPlanCard(Tool):
         job = call.session.jobs.first()
         if job is None or not page_read(job):
             raise Refused("the product page hasn't been read yet, and the plans are made from it.")
-        if job.chosen_plan is not None or job.scenes.exists():
+        if not waits_for_a_plan(job) or job.scenes.exists():
             raise Refused("the plan card was already answered, and the ad is planned from it.")
         problem = self._problem()
         if problem is not None:
@@ -113,6 +113,9 @@ class ShowPlanCard(Tool):
                 replaced_at=timezone.now()
             )
             shown = PlanCard.objects.create(job=job, tool_call=call, card=card)
+            # An idea of the shop owner's that couldn't be made is answered by the new card.
+            job.chosen_plan = None
+            job.save(update_fields=["chosen_plan"])
             messages.add(call.session, role=Message.Role.AGENT, plan_card=shown.pk)
         return (
             "The plan card is shown. Nothing is planned or made until the shop owner answers "
@@ -225,7 +228,7 @@ def hold(call: ToolCall) -> None:
     if not settings.PLAN_CARD_LOCK:
         return
     job = call.session.jobs.first()
-    if job is None or not page_read(job) or job.chosen_plan is not None or job.scenes.exists():
+    if job is None or not page_read(job) or not waits_for_a_plan(job) or job.scenes.exists():
         return
     notices.record(
         call.session,
@@ -253,14 +256,18 @@ class NotAChoice(ValueError):
     """An answer that names a question the card hasn't got, or a choice it hasn't."""
 
 
-def answer(card: PlanCard, choices: dict[str, int] | None) -> Message:
-    """Answer `card` for the shop owner: with their choice in each question by key (an index
-    from 0), any question left out taking the producer's pick, or with every pick when
-    `choices` is None ("Use the agent's picks"). Keeps the chosen plan on the job, sets the
-    ad's length to the plan's, and posts the owner's message saying what was chosen, which
-    the producer reads. Raises Replaced for a card a newer one replaced (the shop owner is
-    told to answer the newest), NotOpen for one answered already, NotAChoice for a choice
-    the card hasn't got. Call it under the session's work lock."""
+def answer(card: PlanCard, choices: dict[str, int] | None, idea: str = "") -> Message:
+    """Answer `card` for the shop owner: with every pick when `choices` is None ("Use the
+    agent's picks"), or with their choice in each question by key (an index from 0) and,
+    instead of a plan, their own `idea` for the ad ("Make this ad"). The plans question must
+    be answered by a plan or an idea; another question left out takes the producer's pick.
+    Keeps what was chosen on the job and, for a plan, sets the ad's length to the plan's; an
+    idea waits for the producer to make it the plan (TakeOwnersIdea), and the lock holds till
+    then. Posts the owner's message saying what was chosen, which the producer reads.
+    Raises Replaced for a card a newer one replaced (the shop owner is told to answer the
+    newest), NotOpen for one answered already, NotAChoice for an answer the card can't take.
+    Call it under the session's work lock."""
+    idea = idea.strip() if choices is not None else ""
     with transaction.atomic():
         card = PlanCard.objects.select_for_update().get(pk=card.pk)
         if card.replaced_at is not None and card.answered_at is None:
@@ -268,24 +275,35 @@ def answer(card: PlanCard, choices: dict[str, int] | None) -> Message:
         if card.answered_at is not None:
             raise NotOpen
         questions = card.card["questions"]
-        keys = {question["key"] for question in questions}
-        unknown = set(choices or {}) - keys
+        unknown = set(choices or {}) - {question["key"] for question in questions}
         if unknown:
             raise NotAChoice(f"The card has no question {', '.join(sorted(unknown))}.")
-        picked: dict[str, int] = {}
+        if choices is not None and "plan" not in choices and not idea:
+            raise NotAChoice("Pick a plan, or say what you'd rather have.")
+        if len(idea) > MOST_IDEA_CHARACTERS:
+            raise NotAChoice(f"Say your idea in up to {MOST_IDEA_CHARACTERS} characters.")
+        picked: dict[str, Any] = {}
         for question in questions:
+            if question["key"] == "plan" and idea:
+                picked["plan"] = None
+                continue
             index = (choices or {}).get(question["key"], question["pick"])
             if not 0 <= index < len(question["choices"]):
                 raise NotAChoice(f"{question['asks']} has no choice {index}.")
             picked[question["key"]] = index
+        if idea:
+            picked["idea"] = idea
         card.answer = picked
         card.answered_at = timezone.now()
         card.save(update_fields=["answer", "answered_at"])
         job = card.job
         job.chosen_plan = chosen(card)
-        job.target_seconds = chosen(card)["plan"]["seconds"]
-        job.save(update_fields=["chosen_plan", "target_seconds"])
-        said = "\n".join(_said(question, picked[question["key"]]) for question in questions)
+        fields = ["chosen_plan"]
+        if job.chosen_plan["plan"] is not None:
+            job.target_seconds = job.chosen_plan["plan"]["seconds"]
+            fields.append("target_seconds")
+        job.save(update_fields=fields)
+        said = "\n".join(_said(question, picked) for question in questions)
         if choices is None:
             said = f"{USE_THE_PICKS}\n{said}"
         assert job.session is not None
@@ -294,18 +312,29 @@ def answer(card: PlanCard, choices: dict[str, int] | None) -> Message:
         )
 
 
+# The longest idea the shop owner may type on the card, as long as a chat message may be.
+MOST_IDEA_CHARACTERS = 2000
+
+
 def chosen(card: PlanCard) -> dict[str, Any]:
-    """What the answered `card` chose: the plan, in full, and the answer to each other
-    question, by key."""
+    """What the answered `card` chose: the plan, in full (None when the shop owner gave
+    their own idea instead, kept under "idea"), and the answer to each other question, by
+    key."""
     assert card.answer is not None
     kept: dict[str, Any] = {}
     for question in card.card["questions"]:
-        kept[question["key"]] = question["choices"][card.answer[question["key"]]]
+        index = card.answer[question["key"]]
+        kept[question["key"]] = None if index is None else question["choices"][index]
+    if card.answer.get("idea"):
+        kept["idea"] = card.answer["idea"]
     return kept
 
 
-def _said(question: dict[str, Any], index: int) -> str:
+def _said(question: dict[str, Any], picked: dict[str, Any]) -> str:
     """One question and the choice taken, as the owner's message says it."""
+    index = picked[question["key"]]
+    if index is None:
+        return f"{question['asks']} My own idea: {picked['idea']}"
     choice = question["choices"][index]
     if question["key"] == "plan":
         style = STYLE_LABELS[choice["style"]]
@@ -315,20 +344,63 @@ def _said(question: dict[str, Any], index: int) -> str:
 
 def for_producer(card: PlanCard) -> str:
     """The answered card as the producer reads it with the owner's answer: the whole chosen
-    plan, its doubt too, and every other answer."""
-    plan = chosen(card)["plan"]
+    plan, its doubt too, or the owner's own idea and what to do with it, and every other
+    answer."""
+    kept = chosen(card)
     others = [
-        f"{question['asks']} {question['choices'][card.answer[question['key']]]}"
+        f"{question['asks']} {kept[question['key']]}"
         for question in card.card["questions"]
-        if question["key"] != "plan" and card.answer is not None
+        if question["key"] != "plan"
     ]
+    also = f" Their other answers: {' '.join(others)}" if others else ""
+    plan = kept["plan"]
+    if plan is None:
+        return (
+            "[The shop owner answered the plan card with their own idea instead of a plan: "
+            f"“{kept['idea']}”.{also} Turn it into the plan with take_owners_idea, keeping "
+            "their words as given, and carry on. If it can't be made (a demo, a style the "
+            "app can't make, or something the page contradicts), say why in one short "
+            "sentence and show a new plan card.]"
+        )
     return (
         f"[The shop owner answered the plan card. The plan: “{plan['title']}”, style "
         f"{plan['style']}, {plan['seconds']} seconds; built on: {plan['built_on']} Opens: "
-        f"{plan['opens']} The doubt it answers: {plan['doubt']}"
-        + (f" Their other answers: {' '.join(others)}" if others else "")
-        + " Plan the ad from it now.]"
+        f"{plan['opens']} The doubt it answers: {plan['doubt']}{also} Plan the ad from it "
+        "now.]"
     )
+
+
+def waits_for_a_plan(job: Job) -> bool:
+    """Whether the job has no chosen plan yet: no card answered, or one answered with the
+    shop owner's idea that the producer hasn't made the plan yet."""
+    return job.chosen_plan is None or job.chosen_plan.get("plan") is None
+
+
+class TakeOwnersIdea(Plan, Tool):
+    """Make the idea the shop owner typed on the plan card the ad's plan, once you have
+    turned it into one: its style, length, title, what it is built on, how it opens and the
+    doubt it answers, keeping their words as given. Only when the idea can be made; if it
+    can't, say why and show a new plan card instead."""
+
+    name = "take_owners_idea"
+
+    def run(self, call: ToolCall) -> str:
+        job = call.session.jobs.first()
+        if job is None or job.chosen_plan is None or not job.chosen_plan.get("idea"):
+            raise Refused("the shop owner hasn't answered a plan card with an idea of their own.")
+        if job.chosen_plan.get("plan") is not None:
+            raise Refused("their idea is already the plan.")
+        if self.style not in STYLES_OFFERED:
+            raise Refused(
+                f'the app can\'t make "{self.style}" ads yet. Say so and show a new plan card.'
+            )
+        if not 1 <= self.seconds <= MOST_SECONDS:
+            raise Refused(f"a plan is 1 to {MOST_SECONDS} seconds.")
+        plan = Plan.model_validate(self.model_dump(include=set(Plan.model_fields)))
+        job.chosen_plan = {**job.chosen_plan, "plan": plan.model_dump()}
+        job.target_seconds = self.seconds
+        job.save(update_fields=["chosen_plan", "target_seconds"])
+        return f"Their idea is the plan: “{self.title}”, {self.seconds} seconds. Plan the ad now."
 
 
 def _styles_rule() -> str:

@@ -179,11 +179,14 @@ export type PlanCard = {
   questions: CardQuestion[];
   longer: string;
   state: "open" | "answered" | "replaced";
-  answer: Record<string, number> | null;
+  /** The index chosen in each question by key, the plans question's null when the shop owner
+   * typed their own idea instead, kept under "idea". */
+  answer: Record<string, number | string | null> | null;
 };
 
 /** What the plan card sends: every pick at once, or the choice in each question by key. */
-export type PlanCardAnswer = { use_picks: true } | { choices: Record<string, number> };
+export type PlanCardAnswer =
+  { use_picks: true } | { choices: Record<string, number>; idea?: string };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */
 export type Session = {

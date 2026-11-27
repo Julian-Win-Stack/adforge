@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { ApiError, type CardQuestion, type PlanCard, type PlanCardAnswer } from "./api";
 
 /** The plan card the agent shows once the page is read (backend agents/plan_card.py): 1 to 3
  * questions, each a set of radio choices with the agent's pick chosen to start with, then
- * "Use the agent's picks" and "Make this ad". Nothing is made until it is answered. Once
- * answered or replaced it shows how it ended and takes no input. */
+ * "Use the agent's picks" and "Make this ad". Under the plans a box takes the shop owner's own
+ * idea instead of a plan: typing in it unpicks the plan, and picking a plan again is the
+ * answer whatever it holds. Nothing is made until it is answered. Once answered or replaced
+ * it shows how it ended and takes no input. */
 export function PlanCardView({
   card,
   state,
@@ -14,17 +16,29 @@ export function PlanCardView({
   card: PlanCard;
   /** How the card stands as the chat sees it, which may be newer than `card.state`. */
   state: PlanCard["state"];
-  /** The index chosen in each question once answered, by key, or null. */
-  answer: Record<string, number> | null;
+  /** What was chosen once answered (`PlanCard.answer`), or null. */
+  answer: PlanCard["answer"];
   onAnswer: (answer: PlanCardAnswer) => Promise<void>;
 }) {
   const [chosen, setChosen] = useState<Record<string, number>>(() =>
     Object.fromEntries(card.questions.map((question) => [question.key, question.pick])),
   );
+  const [idea, setIdea] = useState("");
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const closed = state !== "open" || sending;
-  const shownChoice = (key: string) => (answer ? answer[key] : chosen[key]);
+  const shownChoice = (key: string) => {
+    const index = answer ? answer[key] : chosen[key];
+    return typeof index === "number" ? index : undefined;
+  };
+  const shownIdea = answer ? String(answer.idea ?? "") : idea;
+  const ready = chosen.plan !== undefined || idea.trim() !== "";
+
+  function typeIdea(text: string) {
+    setIdea(text);
+    if (text.trim())
+      setChosen((was) => Object.fromEntries(Object.entries(was).filter(([key]) => key !== "plan")));
+  }
 
   async function send(sent: PlanCardAnswer) {
     setSending(true);
@@ -39,7 +53,8 @@ export function PlanCardView({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    send({ choices: chosen });
+    if (!ready) return;
+    send(chosen.plan !== undefined ? { choices: chosen } : { choices: chosen, idea: idea.trim() });
   }
 
   return (
@@ -56,6 +71,19 @@ export function PlanCardView({
           chosen={shownChoice(question.key)}
           disabled={closed}
           onChoose={(index) => setChosen((was) => ({ ...was, [question.key]: index }))}
+          after={
+            question.key === "plan" && (
+              <textarea
+                className="plan-card-idea"
+                aria-label="Or tell me what you'd rather have"
+                placeholder="Or tell me what you'd rather have…"
+                rows={2}
+                value={shownIdea}
+                disabled={closed}
+                onChange={(event) => typeIdea(event.target.value)}
+              />
+            )
+          }
         />
       ))}
       <p className="plan-card-longer">{card.longer}</p>
@@ -69,7 +97,7 @@ export function PlanCardView({
           <button type="button" disabled={closed} onClick={() => send({ use_picks: true })}>
             Use the agent's picks
           </button>
-          <button type="submit" className="go" disabled={closed}>
+          <button type="submit" className="go" disabled={closed || !ready}>
             Make this ad
           </button>
         </div>
@@ -90,11 +118,14 @@ function Question({
   chosen,
   disabled,
   onChoose,
+  after,
 }: {
   question: CardQuestion;
   chosen: number | undefined;
   disabled: boolean;
   onChoose: (index: number) => void;
+  /** What follows its choices, such as the box for the shop owner's own idea. */
+  after?: ReactNode;
 }) {
   const name = `plan-card-${question.key}`;
   return (
@@ -143,6 +174,7 @@ function Question({
           );
         })}
       </div>
+      {after}
     </fieldset>
   );
 }

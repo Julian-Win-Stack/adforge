@@ -1079,6 +1079,24 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.plan-card-idea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.plan-card-idea:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
 .plan-card-longer {
   margin: 0;
   font-size: 13.5px;
