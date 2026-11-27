@@ -82,8 +82,8 @@ def test_an_owners_too_long_line_is_never_cut_and_the_owner_is_asked(
     assert "shorten_line" not in paid_for()
     assert Scene.objects.get(number=2).line == LONG_OWNER_LINE
     told = answer_of("run_planning_checks")
-    assert "the shop owner's own exact words" in told
-    assert "Split it into two scenes, keeping every word" in told
+    assert not told.startswith("The checks passed")
+    assert LONG_OWNER_LINE in told and "shorten_owner_line" in told
 
 
 def test_an_owner_who_chooses_shorten_gets_the_line_shortened_and_is_told(
@@ -140,7 +140,45 @@ def test_an_owner_who_chooses_split_keeps_every_word_across_two_scenes(
     lines = [scene.line for scene in Scene.objects.order_by("number")][1:3]
     assert " ".join(lines) == LONG_OWNER_LINE
     assert "shorten_line" not in paid_for()
-    assert not answer_of("run_planning_checks").startswith("Refused")
+    assert answer_of("run_planning_checks").startswith("The checks passed")
+
+
+def test_shortening_an_owner_line_that_already_fits_is_refused(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+) -> None:
+    line = Scene.objects.get(number=2).line
+    owner_says(
+        fake_model,
+        say,
+        f'Scene 2 must say exactly: "{line}"',
+        ("edit_scene", {"scene": 2, "line": line, "owner_asked": True}),
+        ("shorten_owner_line", {"scene": 2}),
+    )
+
+    assert answer_of("shorten_owner_line").startswith("Refused:")
+    assert "shorten_line" not in paid_for()
+    assert Scene.objects.get(number=2).line == line
+
+
+def test_an_owner_line_still_too_long_after_shortening_is_handed_back_to_split(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from .conftest import recorded
+
+    owner_line_too_long(fake_model, say)
+    still_long = " ".join(["Our mug holds hot tea"] * 10) + "."
+    fake_model.respond("shorten_line", *[{"line": still_long}] * 3)
+
+    owner_says(fake_model, say, "Shorten it.", ("shorten_owner_line", {"scene": 2}))
+
+    assert "split it" in answer_of("shorten_owner_line")
+    assert any("still takes too long to say" in text for _, text in recorded(api, session_id))
 
 
 def test_an_owner_mark_does_not_lift_the_opening_lock_before_the_first_ad(

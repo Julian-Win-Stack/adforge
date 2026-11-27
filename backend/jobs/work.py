@@ -2099,26 +2099,31 @@ Fit = Literal["lengthen", "too_short", "shorten_broll", "hand_back", "ask_owner"
 
 
 def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | None:
-    """The first scene whose line doesn't fit its clip, and what it needs."""
+    """The first scene whose line doesn't fit its clip, and what it needs. An owner's line
+    waiting on their answer comes last, so the other scenes are fitted meanwhile."""
+    waiting = None
     for scene in job.scenes.all():
         fit = _fit_for(job, scene, words_per_second)
-        if fit is not None:
+        if fit == "ask_owner":
+            waiting = waiting or (scene, fit)
+        elif fit is not None:
             return scene, fit
-    return None
+    return waiting
 
 
 def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
     """Lengthen short lines, shorten long lines, then hand remaining problems to the producer."""
     seconds = line_seconds(scene.line, words_per_second)
-    if seconds > LONGEST_BROLL_LINE_SECONDS and keeps_exact_line(scene):
-        # The owner's exact line after the first ad is never cut without asking them (#793).
-        return "ask_owner"
     if seconds > LONGEST_BROLL_LINE_SECONDS:
         shortened = job.model_calls.filter(
             purpose="shorten_line",
             outcome=ModelCall.Outcome.SUCCEEDED,
             handoff__scene=scene.number,
         ).count()
+        if not shortened and keeps_exact_line(scene):
+            # The owner's exact line after the first ad is never cut without asking them
+            # (#793); once they chose shortening, it takes the usual path.
+            return "ask_owner"
         return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "hand_back"
     if seconds < SHORTEST_BROLL_LINE_SECONDS and not keeps_exact_line(scene):
         lengthened = job.model_calls.filter(
@@ -2165,13 +2170,18 @@ def _owner_line_too_long(scene: Scene, words_per_second: float) -> PlanningProbl
     )
 
 
+def fits_one_clip(line: str) -> bool:
+    """Whether `line` is short enough to say in one clip."""
+    return line_seconds(line, FIXED_WORDS_PER_SECOND) <= LONGEST_BROLL_LINE_SECONDS
+
+
 def shorten_owner_line(job: Job, scene: Scene) -> bool:
     """Shorten the owner's too-long line after they chose it, the owner told the old and new
     line; whether it fits one clip now."""
     for _ in range(MOST_BROLL_SHORTENINGS):
         _shorten_line(job, scene, most_words_in_a_broll_line(FIXED_WORDS_PER_SECOND))
         scene.refresh_from_db()
-        if line_seconds(scene.line, FIXED_WORDS_PER_SECOND) <= LONGEST_BROLL_LINE_SECONDS:
+        if fits_one_clip(scene.line):
             return True
     return False
 
