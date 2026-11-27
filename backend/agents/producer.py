@@ -2363,13 +2363,17 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
     card = _end_card_text(job)
     # One made before clips were cut after their last word (#442) keeps that silence, so it
     # is made again.
-    kept_to = [
-        assembly.closing_silence_end(
-            assembly.last_word_end(transcript.words if transcript is not None else []),
-            clip.seconds or 0.0,
-        )
-        for clip, transcript in scene_clips
-    ]
+    kept_to = (
+        [cut.clip_end for cut in product_shots.cuts([clip for clip, _ in scene_clips])]
+        if product_shots.is_product_shots(job)
+        else [
+            assembly.closing_silence_end(
+                assembly.last_word_end(transcript.words if transcript is not None else []),
+                clip.seconds or 0.0,
+            )
+            for clip, transcript in scene_clips
+        ]
+    )
     for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
         was_made_from = [(cut["clip"], cut.get("overlay")) for cut in ad.cuts]
         if (

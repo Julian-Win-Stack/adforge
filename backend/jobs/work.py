@@ -4932,36 +4932,22 @@ def assemble_ad(
     first clip's first word, cut to leave the ad opening on it, and any silence over
     assembly.AFTER_LAST_WORD_SECONDS after a clip's last word (#442). Captions use each
     clip's transcript, including historical audio-backed transcripts, when available. Keep
-    the result as the next ad version, with no model call.
+    the result as the next ad version, with no model call. A product-shots ad has no voice:
+    its clips are cut to their planned lengths, with no captions and none of their own sound,
+    the music alone under them (jobs.product_shots).
     """
-    whole = []
-    timed = []
-    last_words: list[float | None] = []
-    for clip, transcript in scenes:
-        assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
-        words = transcript.words if transcript is not None else []
-        last_word = assembly.last_word_end(words)
-        if words and not assembly.usable_last_word(last_word, clip.seconds):
-            post_notice(
-                job,
-                notices.CLOSING_SILENCE_NOT_CUT,
-                f"Scene {clip.scene.number}'s clip plays to its end: its transcript's last word "
-                f"has no usable time ({words[-1].get('end')!r} in a {clip.seconds:g} s clip), so "
-                "any silence after the line is kept.",
-                Message.Level.PROBLEM,
-            )
-        last_words.append(last_word)
-        whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
-        timed.append(timed_caption_words(transcript, line=clip.scene.line))
-    # The ad opens on its hook's first word, not on the silence H3 left before it.
-    first_word = timed[0][0]["start"] if timed and timed[0] else None
-    # And moves on from each clip soon after its last word, not after a silent stall.
-    planned = assembly.planned_cuts(
-        whole,
-        opening_cut=assembly.opening_silence(first_word, whole[0][2]) if whole else 0.0,
-        last_words=last_words,
-    )
-    drawn = assembly.captions(planned, timed)
+    from . import product_shots
+
+    if product_shots.is_product_shots(job):
+        planned = product_shots.cuts([clip for clip, _ in scenes])
+        drawn: list[assembly.Caption] = []
+        sound: dict[str, Any] = {
+            "clip_sound": False,
+            "music_volume": product_shots.MUSIC_ALONE_VOLUME,
+        }
+    else:
+        planned, drawn = _cuts_and_captions(job, scenes)
+        sound = {}
     card = end_card_of(job, planned)
     photo = end_card_photo(job)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
@@ -4991,7 +4977,9 @@ def assemble_ad(
                 on_the_card = Path(folder) / "end-card-photo.png"
                 on_the_card.write_bytes(flat)
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, ad, music=under, drawn=drawn, end_card=card, photo=on_the_card)
+        assembly.join(
+            parts, ad, music=under, drawn=drawn, end_card=card, photo=on_the_card, **sound
+        )
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
@@ -5005,6 +4993,42 @@ def assemble_ad(
         captions=[asdict(caption) for caption in drawn],
         end_card=end_card_record(card, photo),
     )
+
+
+def _cuts_and_captions(
+    job: Job, scenes: list[tuple[ProducedItem, ProducedItem | None]]
+) -> tuple[list[assembly.Cut], list[assembly.Caption]]:
+    """A person-talking ad's cuts, each clip played from its first word to soon after its
+    last, and the captions written from its transcripts."""
+    whole = []
+    timed = []
+    last_words: list[float | None] = []
+    for clip, transcript in scenes:
+        assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
+        words = transcript.words if transcript is not None else []
+        last_word = assembly.last_word_end(words)
+        if words and not assembly.usable_last_word(last_word, clip.seconds):
+            post_notice(
+                job,
+                notices.CLOSING_SILENCE_NOT_CUT,
+                f"Scene {clip.scene.number}'s clip plays to its end: its transcript's last word "
+                f"has no usable time ({words[-1].get('end')!r} in a {clip.seconds:g} s clip), so "
+                "any silence after the line is kept.",
+                Message.Level.PROBLEM,
+            )
+        last_words.append(last_word)
+        whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
+        timed.append(timed_caption_words(transcript, line=clip.scene.line))
+    # The ad opens on its hook's first word, not on the silence H3 left before it.
+    first_word = timed[0][0]["start"] if timed and timed[0] else None
+    # And moves on from each clip soon after its last word, not after a silent stall.
+    planned = assembly.planned_cuts(
+        whole,
+        opening_cut=assembly.opening_silence(first_word, whole[0][2]) if whole else 0.0,
+        last_words=last_words,
+    )
+    drawn = assembly.captions(planned, timed)
+    return planned, drawn
 
 
 def end_card_of(job: Job, cuts: Sequence[assembly.Cut]) -> assembly.EndCard:
