@@ -109,6 +109,7 @@ from . import (
     hard_list,
     loop,
     note_photos,
+    page_for_producer,
     snapshot,
     step_signals,
     voice_changes,
@@ -116,7 +117,7 @@ from . import (
 from .current_limits import current_limits
 from .hard_limits import hard_limits
 from .look import Look
-from .loop import Agent, Failed, Refused, Tool
+from .loop import Agent, Failed, Refused, Tool, ToolResult
 from .models import AskedChangeFiling, ToolCall
 from .money import dollars
 from .scene_agent.lifecycle import PLACE_NAMES
@@ -359,14 +360,19 @@ class ReadPage(Tool):
             raise ValueError("the length has to be from 1 to 32,767 seconds")
         return seconds
 
-    def run(self, call: ToolCall) -> str:
+    def run(self, call: ToolCall) -> str | ToolResult:
         try:
-            return self._read(call)
+            told = self._read(call)
         except SavedPageMissing as error:
             notices.record(
                 call.session, notices.SAVED_PAGE_MISSING, str(error), Message.Level.PROBLEM
             )
             raise Failed(str(error)) from error
+        job = _the_job(call)
+        if job is None or not _page_read(job):
+            return told
+        # The producer reads the page and sees its photos itself (ADR 0016).
+        return page_for_producer.with_the_page(job, told)
 
     def _read(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -554,7 +560,7 @@ class UsePhotos(Tool):
         description="Every photo the shop owner attached in this chat, each once."
     )
 
-    def run(self, call: ToolCall) -> str:
+    def run(self, call: ToolCall) -> str | ToolResult:
         job = _with_its_page(call, "the photos belong to its ad")
         if job.scenes.exists():
             raise Refused(
@@ -613,7 +619,21 @@ class UsePhotos(Tool):
                 "it can't be used yet, and to send it with a note on a scene once the first "
                 "version is made. Plan the ad without it."
             )
-        return told
+        return page_for_producer.with_the_page(job, told) if _page_read(job) else told
+
+
+class SeePage(Tool):
+    """Read the product page's text and see its product photos again, as they stand now:
+    after the shop owner pasted the page in the page panel, or whenever you need them back."""
+
+    name = "see_page"
+    runs_while_paused = True
+
+    def run(self, call: ToolCall) -> ToolResult:
+        job = _the_job(call)
+        if job is None or not _page_read(job):
+            raise Refused("no product page has been read yet, so there is nothing to see.")
+        return page_for_producer.with_the_page(job, "The product page as it stands:")
 
 
 def _owner_photos(count: int) -> str:
@@ -2679,6 +2699,7 @@ PRODUCER = Agent(
     tools=[
         ReadPage,
         UsePhotos,
+        SeePage,
         AddToLibrary,
         CantUseOwnerFiles,
         PlanAd,
@@ -2710,6 +2731,7 @@ PRODUCER = Agent(
     asks_why=True,
     pausable=True,
     folds=True,
+    shows_each_picture_once=True,
     asks_again=True,
     snapshot=snapshot.ad_as_it_stands,
     holds_the_turn=note_photos.hold_the_turn,

@@ -35,6 +35,7 @@ from .conftest import (
     picture,
     recorded,
     results_of,
+    told_by_the_tool,
 )
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
@@ -1064,6 +1065,7 @@ def test_the_producer_is_given_the_result_of_the_tool_the_stopped_worker_left(
         "read_page",
     )
     assert given["arguments"] == {"link": product_page_url, "target_seconds": 15}
-    assert given["result"].endswith(
+    # What the tool said, before the page and its photos (ADR 0016).
+    assert told_by_the_tool(given["result"]).endswith(
         "The page names the mug, its price and its size.\nKept 2 product photos."
     )
