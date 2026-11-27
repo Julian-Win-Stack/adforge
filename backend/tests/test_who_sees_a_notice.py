@@ -45,6 +45,7 @@ FOR_THE_OWNER = {
     "ad_blocked_by_filter",
     "face_swap_failed",
     "no_presenter_to_swap",
+    "real_photo_not_used",
     "target_length_kept",
 }
 
