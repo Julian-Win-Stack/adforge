@@ -120,7 +120,8 @@ class DrawSilentPicture(Tool):
 class UseRealPhoto(Tool):
     """Start this real-photo scene on the planned product photo itself: code fits it to the
     tall frame and keeps its pixels, cropped around focus_x, focus_y or with its background
-    extended above and below. The picture check answers; you see the picture."""
+    extended above and below. The picture check answers; you see the picture. After two
+    failed checks the scene becomes an AI scene."""
 
     name: ClassVar[str] = "use_real_photo"
     focus_x: int = Field(
@@ -140,7 +141,7 @@ class UseRealPhoto(Tool):
             kind=ProducedItem.Kind.STARTING_PICTURE, sent__call=str(call.pk)
         ).first()
         if old is not None:
-            return result(old)
+            return _switched_after(scene, result(old))
         if starts_on(scene) != REAL_PHOTO:
             raise Refused("this scene is an AI scene: draw it with draw_silent_picture.")
         if window.starting_pictures >= window.starting_picture_limit:
@@ -224,7 +225,38 @@ class UseRealPhoto(Tool):
             },
             previous_picture=current_picture(call),
         )
-        return result(made)
+        answer = result(made)
+        if _failed_real_photos(scene) >= REAL_PHOTO_TRIES:
+            # The photo has had its tries: the scene goes on as an AI scene (Julian, Nov 27).
+            switch = _drawn_instead(scene, number, "its picture failed its check twice")
+            return ToolResult(text=f"{answer.text}\n{switch}", pictures=answer.pictures)
+        return answer
+
+
+# How many of a real-photo scene's pictures may fail their check before it is drawn instead.
+REAL_PHOTO_TRIES = 2
+
+
+def _failed_real_photos(scene: Scene) -> int:
+    """How many starting pictures of `scene` made from its real photo failed their check."""
+    return sum(
+        1
+        for picture in scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE)
+        if "real_photo" in ((picture.sent or {}).get("form") or {})
+        and (picture.ruling or {}).get("status") == "failed"
+    )
+
+
+def _switched_after(scene: Scene, answer: ToolResult) -> ToolResult:
+    """`answer`, replayed after a worker stop, still telling the agent when its picture's
+    failure switched the scene to an AI scene."""
+    scene.refresh_from_db(fields=["silent"])
+    if starts_on(scene) == REAL_PHOTO:
+        return answer
+    return ToolResult(
+        text=f"{answer.text}\nThe scene is an AI scene now: draw it with draw_silent_picture.",
+        pictures=answer.pictures,
+    )
 
 
 def _drawn_instead(scene: Scene, photo: int, why: str) -> Refused:
