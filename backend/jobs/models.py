@@ -204,6 +204,14 @@ class Job(models.Model):
         blank=True,
         help_text="The product's name as the ad says it, from the plan. At least one line says it.",
     )
+    end_card = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="The end card's parts (jobs.card_parts.CardParts, spec #783): each part's "
+        "content, whether it is shown, its size and its place in the order, and the accent "
+        "colour. Empty until something sets it: the card is then made from the product's name, "
+        "the end card line and price and the product link's website (jobs.work.end_card_parts).",
+    )
     length_choice = models.CharField(
         max_length=20,
         choices=LengthChoice.choices,
@@ -1282,8 +1290,9 @@ class ProducedItem(models.Model):
         null=True,
         blank=True,
         help_text="For a finished ad, the end card it ends on (jobs.assembly.EndCard): its "
-        'name, line, price, website, start and end in seconds, and its photo\'s "file" key, '
-        "blank for none. Blank for an ad made before end cards (spec #401).",
+        '"start" and "end" in seconds, its photo\'s "file" key (blank for none) and the '
+        '"card" it drew from (jobs.card_parts.CardParts, spec #783). Older ads kept the name, '
+        "line, price and website instead. Blank for an ad made before end cards (spec #401).",
     )
     ruling = models.JSONField(
         null=True,

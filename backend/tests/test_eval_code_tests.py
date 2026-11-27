@@ -14,6 +14,7 @@ from evals.code_tests import Scene, Shipped, demo_floor, end_card, name_said
 from gateway.fake import FakeModel
 from jobs import work
 from jobs.models import Job, ProducedItem
+from jobs.planning import END_CARD_SECONDS
 
 from .conftest import HeldSteps
 from .test_producer_assemble import assemble, finish
@@ -37,7 +38,10 @@ def test_a_finished_ad_passes_both_tests_and_the_command_says_why(
 
     out = capsys.readouterr().out
     assert f"{session_id} [TBT]: demo floor pass: demo scene 2 (B-roll); the ending pass" in out
-    assert 'the ending pass (pass: end card held 2.00 s; pass: "Kiln & Co" said in scene 1)' in out
+    assert (
+        f"the ending pass (pass: end card held {END_CARD_SECONDS:.2f} s; "
+        'pass: "Kiln & Co" said in scene 1)'
+    ) in out
     assert "demo floor: 1/1 pass" in out
     assert "the ending: 1/1 pass" in out
 
@@ -86,7 +90,9 @@ def test_a_session_id_with_no_ad_at_all_is_named(capsys: pytest.CaptureFixture[s
     assert f"{unknown}: no finished ad" in capsys.readouterr().out
 
 
-def ad(*scenes: tuple[str, str], heard: str | None = "", card: float | None = 2.0) -> Shipped:
+def ad(
+    *scenes: tuple[str, str], heard: str | None = "", card: float | None = END_CARD_SECONDS
+) -> Shipped:
     return Shipped(
         key="ad",
         scenes=[
@@ -112,7 +118,7 @@ def test_the_end_card_must_play_its_photo_for_at_least_one_and_a_half_seconds() 
     assert end_card(ad(card=1.49)) == code_tests.Verdict(False, "end card held 1.49 s, under 1.5 s")
     assert end_card(ad(card=None)) == code_tests.Verdict(False, "no end card")
     assert end_card(replace(ad(), end_card_photo=False)) == code_tests.Verdict(
-        False, "end card 2.00 s with no product photo"
+        False, f"end card {END_CARD_SECONDS:.2f} s with no product photo"
     )
 
 

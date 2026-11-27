@@ -184,8 +184,16 @@ Every scene's clip joined in order with its own sound, captions, overlays and mu
 _Avoid_: Final video, render, output
 
 **End card**:
-The card a finished ad ends on after its last scene, drawn by our own edit: product photo, name, one line in the page's own words, the price if the plan has one, and the website. Counts toward the ad's length. Not the call to action the person says.
+The card a finished ad ends on after its last scene, drawn by our own edit and held 3 seconds: made of parts in an order, each shown or hidden and in one of three sizes: product photo, headline, price (with the old price crossed out and a "% off" badge on a sale), the sale's end date, one small line in the page's own words, the shop line, and what the shop owner added (an extra line, a second photo, a logo). Its words pop in one part after another. Counts toward the ad's length. Not the call to action the person says.
 _Avoid_: CTA, outro, closing frame
+
+**Accent colour**:
+The one colour an ad's end card headline, price and badge are drawn in, readable on white. Near-black until something sets it. Not the product colour, which stays the colour option the ad is for.
+_Avoid_: Brand colour, theme colour
+
+**Shop line**:
+The end card's line that says where to buy: today the website of the product's link.
+_Avoid_: Footer, URL line
 
 **Person**:
 The presenter in an ad: a portrait and voice words reused in every clip prompt. A voice change means filming every scene again.

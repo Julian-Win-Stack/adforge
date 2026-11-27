@@ -433,10 +433,10 @@ def test_an_overlay_the_producer_fixes_after_two_failed_rewrites_is_checked_agai
 
 
 # The plan's lines of 12 words each play as clips of 5 seconds: each clip lasts its words at
-# the fixed 2.8 words per second, plus 0.6 seconds, rounded up, at least 5. The 2-second end
+# the fixed 2.8 words per second, plus 0.6 seconds, rounded up, at least 5. The 3-second end
 # card follows them.
 @pytest.mark.parametrize("target_seconds", [15, 17])
-def test_a_script_no_more_than_2_seconds_over_its_target_fits(
+def test_a_script_no_more_than_3_seconds_over_its_target_fits(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], target_seconds: int
 ) -> None:
     checking(fake_model, product_page_url, PLAN, target_seconds=target_seconds)
@@ -476,7 +476,7 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     assert paid_for().count("shorten_script") == 2
     assert not results_of("ask_owner")
     expected = (
-        f"Your ad is about 17 seconds, longer than your {target}-second "
+        f"Your ad is about 18 seconds, longer than your {target}-second "
         "target after shortening; I've kept it at this length."
     )
     assert [(role, text) for role, text in chat(api, session_id) if text == expected] == [
@@ -562,7 +562,7 @@ def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
         "Yours for $24.00 from Kiln & Co, for drinks at home every day.",
     ]
     (sent,) = handoffs("shorten_script")
-    # Eleven seconds plus the two allowed over, less the 2-second end card and 1.6 seconds for
+    # Eleven seconds plus the three allowed over, less the 3-second end card and 1.6 seconds for
     # each of the 3 clips (0.6 after its line, and its rounding up), at 2.8 words per second.
     assert (sent["target_seconds"], sent["most_words"]) == (11, 17)
     # The unchanged first line passed before, so only the new second line is checked.

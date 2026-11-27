@@ -126,6 +126,7 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
     (AgentFixTry, "fix_check"),
     *((Job, name) for name in ("firecrawl", "colours", "side_photos", "product_photos")),
     (Job, "length_kept_script"),
+    (Job, "end_card"),
     (Job, "warnings"),
     (LibraryItem, "source"),
     (LibraryItem, "cut_out"),

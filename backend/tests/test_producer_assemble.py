@@ -11,11 +11,13 @@ import pytest
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
-from adforge.file_store import read
+from adforge.file_store import read, save
 from gateway.fake import FakeModel, turn
 from jobs import assembly
+from jobs.card_parts import CardParts, Part, PartKind, Size
 from jobs.models import Job, ProducedItem
 from jobs.planning import END_CARD_SECONDS
+from jobs.work import end_card_parts
 
 from .conftest import (
     PLAN,
@@ -130,14 +132,14 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
 ) -> None:
     assemble(fake_model, say)
 
-    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 17 seconds)")
+    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 18 seconds)")
     (ad,) = ads()
     # The three 5-second clips, then the end card.
     assert (ad.version, ad.scene, ad.seconds) == (1, None, 15.0 + END_CARD_SECONDS)
     width, height, seconds = video(read(ad.file))
     # Every ad is made at the one frame size, whatever size its clips came at.
     assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
-    assert seconds == pytest.approx(17.0, abs=0.1)
+    assert seconds == pytest.approx(15.0 + END_CARD_SECONDS, abs=0.1)
     # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
     # is looked at halfway through its scene.
     shows = [colour_at(read(ad.file), middle) for middle in (2.0, 8.0, 13.0)]
@@ -348,7 +350,7 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
     assert len(ads_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
         "The ad was already assembled from these clips, overlays, this music and end card "
-        "(version 1, 17 seconds) and shown to the shop owner, so nothing was made again. "
+        "(version 1, 18 seconds) and shown to the shop owner, so nothing was made again. "
         "Assembling costs nothing."
     )
 
@@ -363,7 +365,7 @@ def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
     music = Job.objects.get().produced.get(kind="music")
     assert (ad.made_from, music.seconds) == (music, 15 + END_CARD_SECONDS)
     heard = read(ad.file)
-    assert video(heard)[2] == pytest.approx(17.0, abs=0.1)
+    assert video(heard)[2] == pytest.approx(15.0 + END_CARD_SECONDS, abs=0.1)
     # The music is heard all the way through, and the voice is clearly louder than it.
     assert loudness(heard, "music", between=(0, 4.5)) > -40
     assert loudness(heard, "music", between=(4.5, 9)) > -40
@@ -408,7 +410,7 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert second.cuts == first.cuts
     assert first.file != second.file
     assert len(ads_shown(api, session_id)) == 2
-    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 17 seconds)")
+    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 18 seconds)")
 
 
 @pytest.mark.parametrize("legacy_rule", [None, "small_slip", "name"])
@@ -505,20 +507,30 @@ def test_the_ad_ends_on_its_end_card_held_for_its_seconds_after_the_last_scene(
 
     (ad,) = ads()
     job = Job.objects.get()
+    photo = job.photos.get(shows_product_colour=True).file
+    # The card's parts, made from what the app knows: the photo, the product's name as the
+    # headline, the plan's price and line, and the link's website as the shop line, in
+    # near-black. The rest are empty until the owner or the planner fills them.
     assert ad.end_card == {
-        "name": "Stoneware Mug",
-        "line": "Hand-thrown, holds 350 ml, dishwasher safe.",
-        "price": "$24.00",
-        "website": assembly.website_of(job.product_url),
         "start": 15.0,
         "end": 15.0 + END_CARD_SECONDS,
-        "file": job.photos.get(shows_product_colour=True).file,
+        "file": photo,
+        "card": CardParts.of(
+            {
+                PartKind.PHOTO: {"file": photo},
+                PartKind.HEADLINE: {"text": "Stoneware Mug"},
+                PartKind.PRICE: {"text": "$24.00"},
+                PartKind.SMALL_LINE: {"text": "Hand-thrown, holds 350 ml, dishwasher safe."},
+                PartKind.SHOP_LINE: {"text": assembly.website_of(job.product_url)},
+            }
+        ).record(),
     }
+    assert END_CARD_SECONDS == 3
     shown = read(ad.file)
     # Held from the last scene's end to the ad's end.
-    assert shows_the_end_card(shown, 15.1) and shows_the_end_card(shown, 16.9)
+    assert shows_the_end_card(shown, 15.1) and shows_the_end_card(shown, 17.9)
     assert not shows_the_end_card(shown, 14.5)
-    assert "the end card from 15 to 17" in results_of("assemble_ad")[0]
+    assert "the end card from 15 to 18" in results_of("assemble_ad")[0]
 
 
 @pytest.mark.parametrize("the_plan", [_without_a_price()])
@@ -529,10 +541,13 @@ def test_the_end_card_shows_no_price_when_the_plan_has_none(
 
     (ad,) = ads()
     assert ad.end_card is not None
-    assert (ad.end_card["line"], ad.end_card["price"]) == (
-        "Hand-thrown, holds 350 ml, dishwasher safe.",
-        "",
+    card = CardParts.model_validate(ad.end_card["card"])
+    assert (card.part(PartKind.SMALL_LINE), card.part(PartKind.PRICE)) == (
+        Part(kind=PartKind.SMALL_LINE, text="Hand-thrown, holds 350 ml, dishwasher safe."),
+        Part(kind=PartKind.PRICE),
     )
+    drawn = [words.text for words in assembly.end_card_layout(card).words]
+    assert "$24.00" not in drawn and "Stoneware Mug" in drawn
 
 
 def test_an_ad_made_before_end_cards_is_made_again_with_one(
@@ -547,6 +562,12 @@ def test_an_ad_made_before_end_cards_is_made_again_with_one(
     assert (old.end_card, new.end_card is not None) == (None, True)
 
 
+def price_of(ad: ProducedItem) -> str:
+    part = CardParts.model_validate((ad.end_card or {})["card"]).part(PartKind.PRICE)
+    assert part is not None
+    return part.text
+
+
 def test_a_changed_end_card_gets_a_new_version_of_the_ad(
     fake_model: FakeModel, finished: None, say: Callable[..., None]
 ) -> None:
@@ -556,9 +577,95 @@ def test_a_changed_end_card_gets_a_new_version_of_the_ad(
     assemble(fake_model, say)
 
     first, second = ads()
-    assert (first.end_card or {})["price"] == "$24.00"
-    assert (second.end_card or {})["price"] == ""
+    assert (price_of(first), price_of(second)) == ("$24.00", "")
     assert second.cuts == first.cuts
+
+
+def kept_card(job: Job) -> CardParts:
+    """The job's end card as the next join would draw it, kept on the job."""
+    card = end_card_parts(job)
+    Job.objects.filter(pk=job.pk).update(end_card=card.record())
+    return card
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(lambda card: card.model_copy(update={"accent": "#1f4a39"}), id="accent"),
+        pytest.param(
+            lambda card: card.model_copy(update={"parts": tuple(reversed(card.parts))}),
+            id="order",
+        ),
+        pytest.param(
+            lambda card: card.model_copy(
+                update={
+                    "parts": tuple(
+                        part.model_copy(update={"size": Size.LARGE}) for part in card.parts
+                    )
+                }
+            ),
+            id="size",
+        ),
+        pytest.param(lambda card: card.without_file(card.parts[0].file), id="photo"),
+    ],
+)
+def test_any_change_to_the_kept_end_card_gets_a_new_version_and_none_reuses_the_old(
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+    change: Callable[[CardParts], CardParts],
+) -> None:
+    card = kept_card(Job.objects.get())
+    assemble(fake_model, say)
+    assemble(fake_model, say)
+    assert len(ads()) == 1
+
+    Job.objects.update(end_card=change(card).record())
+    assemble(fake_model, say)
+
+    first, second = ads()
+    assert first.end_card is not None and second.end_card is not None
+    assert (first.end_card["card"], second.end_card["card"]) == (
+        card.record(),
+        change(card).record(),
+    )
+    assert second.cuts == first.cuts and second.file != first.file
+
+
+def changed_photo(card: CardParts, file: str) -> dict[str, Any]:
+    return card.model_copy(
+        update={
+            "parts": tuple(
+                part.model_copy(update={"file": file}) if part.kind == PartKind.PHOTO else part
+                for part in card.parts
+            )
+        }
+    ).record()
+
+
+def test_an_end_card_photo_that_isnt_a_picture_is_left_off_and_says_so(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+) -> None:
+    # The card's photo is a file that can't be read as a picture.
+    broken = save("broken.png", b"not a picture")
+    Job.objects.update(end_card=changed_photo(end_card_parts(Job.objects.get()), broken))
+
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert ad.end_card is not None and ad.end_card["file"] == ""
+    # The finished ad keeps the card it was asked to draw, so the next join compares it.
+    kept = CardParts.model_validate(ad.end_card["card"]).part(PartKind.PHOTO)
+    assert kept is not None and kept.file == broken
+    assert video(read(ad.file))[2] == pytest.approx(15 + END_CARD_SECONDS, abs=0.1)
+    assert any(
+        level == "problem" and "end card's photo couldn't be drawn" in text
+        for level, text in recorded(api, session_id)
+    )
 
 
 def test_an_end_card_with_no_usable_photo_is_drawn_without_one_and_says_so(

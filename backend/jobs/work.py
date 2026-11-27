@@ -79,6 +79,7 @@ from . import (
     picker_grids,
     reference_photos,
 )
+from .card_parts import PICTURES, CardParts, PartKind
 from .checks import (
     DEFAULT_AD_SECONDS,
     FACT_CHECK_INSTRUCTIONS,
@@ -4957,8 +4958,16 @@ def assemble_ad(
         last_words=last_words,
     )
     drawn = assembly.captions(planned, timed)
-    card = end_card_of(job, planned)
-    photo = end_card_photo(job)
+    card = end_card_parts(job)
+    photo = card.part(PartKind.PHOTO)
+    if photo is not None and photo.shown and not photo.file:
+        post_notice(
+            job,
+            notices.END_CARD_WITHOUT_PHOTO,
+            "No product photo without a stranger's face could go on the end card, so the ad "
+            "ends on a card with no photo.",
+            Message.Level.PROBLEM,
+        )
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
     with tempfile.TemporaryDirectory() as folder:
         parts = []
@@ -4968,25 +4977,14 @@ def assemble_ad(
             parts.append((path, cut))
         under = Path(folder) / "music"
         under.write_bytes(file_store.read(music.file))
-        on_the_card = None
-        if photo is not None:
-            try:
-                flat = assembly.flat_photo(file_store.read(photo.file))
-            except ValueError as unreadable:
-                post_notice(
-                    job,
-                    notices.END_CARD_WITHOUT_PHOTO,
-                    f"Product photo {photo.position} couldn't go on the end card ({unreadable}), "
-                    "so the ad ends on a card with the product's name, line, price and website "
-                    "but no photo.",
-                    Message.Level.PROBLEM,
-                )
-                photo = None
-            else:
-                on_the_card = Path(folder) / "end-card-photo.png"
-                on_the_card.write_bytes(flat)
+        drawable, pictures = _end_card_pictures(job, card)
+        end_card = assembly.end_card_after(planned, END_CARD_SECONDS, drawable)
+        on_the_card = Path(folder) / "end-card.png"
+        on_the_card.write_bytes(assembly.end_card_picture(drawable, pictures))
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, ad, music=under, drawn=drawn, end_card=card, photo=on_the_card)
+        assembly.join(
+            parts, ad, music=under, drawn=drawn, end_card=end_card, card_picture=on_the_card
+        )
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
@@ -4995,50 +4993,78 @@ def assemble_ad(
         version=(last["last"] or 0) + 1,
         file=file,
         made_from=music,
-        seconds=card.end,
+        seconds=end_card.end,
         cuts=[asdict(cut) for cut in planned],
         captions=[asdict(caption) for caption in drawn],
-        end_card=end_card_record(card, photo),
+        end_card=end_card_record(end_card, card),
     )
 
 
-def end_card_of(job: Job, cuts: Sequence[assembly.Cut]) -> assembly.EndCard:
-    """The end card `job`'s ad ends on after `cuts` (spec #401): the product's name, the
-    plan's end card line and price, and the website of the product's link."""
-    return assembly.end_card_after(
-        cuts,
-        END_CARD_SECONDS,
-        name=job.product_name,
-        line=job.end_card_line,
-        price=job.end_card_price,
-        website=assembly.website_of(job.product_url),
+def end_card_parts(job: Job) -> CardParts:
+    """The end card `job`'s ad ends on now (spec #783): the parts kept on the job, or, before
+    anything set them, the card made from what the app knows: the product photo
+    (end_card_photo), the product's name as the headline, the plan's end card price and line,
+    and the product link's website as the shop line, in near-black."""
+    if job.end_card:
+        return CardParts.model_validate(job.end_card)
+    photo = end_card_photo(job)
+    return CardParts.of(
+        {
+            PartKind.PHOTO: {"file": photo.file if photo is not None else ""},
+            PartKind.HEADLINE: {"text": job.product_name},
+            PartKind.PRICE: {"text": job.end_card_price},
+            PartKind.SMALL_LINE: {"text": job.end_card_line},
+            PartKind.SHOP_LINE: {"text": assembly.website_of(job.product_url)},
+        }
     )
+
+
+def _end_card_pictures(job: Job, card: CardParts) -> tuple[CardParts, dict[str, bytes]]:
+    """The card as it can be drawn, and its pictures by file key: a picture part whose file
+    can't be read as a picture is left off the card, with a developer notice."""
+    pictures: dict[str, bytes] = {}
+    for part in card.drawn():
+        if part.kind not in PICTURES or part.file in pictures:
+            continue
+        data = file_store.read(part.file)
+        try:
+            assembly.picture_of(data)
+        except ValueError as unreadable:
+            post_notice(
+                job,
+                notices.END_CARD_WITHOUT_PHOTO,
+                f"The end card's {part.kind.replace('_', ' ')} couldn't be drawn ({unreadable}), "
+                "so the ad ends on a card without it.",
+                Message.Level.PROBLEM,
+            )
+            card = card.without_file(part.file)
+        else:
+            pictures[part.file] = data
+    return card, pictures
 
 
 def end_card_photo(job: Job) -> ProductPhoto | None:
     """The product photo `job`'s end card shows large: the first in the ad's colour, preferring
     one of the product alone, with no stranger's face and not cut from a video; else the
-    first photo with no stranger's face. None, with a developer notice, when there is none:
-    the card is drawn without a photo."""
+    first photo with no stranger's face. None when there is none."""
     usable = job.photos.filter(has_face=False, from_video=None)
-    photo = (
+    return (
         usable.filter(shows_product_colour=True).order_by("-alone", "position").first()
         or usable.order_by("position").first()
     )
-    if photo is None:
-        post_notice(
-            job,
-            notices.END_CARD_WITHOUT_PHOTO,
-            "No product photo without a stranger's face could go on the end card, so the ad "
-            "ends on a card with the product's name, line, price and website but no photo.",
-            Message.Level.PROBLEM,
-        )
-    return photo
 
 
-def end_card_record(card: assembly.EndCard, photo: ProductPhoto | None) -> dict[str, Any]:
-    """The end card as a finished ad keeps it: its text and times, and its photo's file."""
-    return {**asdict(card), "file": photo.file if photo is not None else ""}
+def end_card_record(card: assembly.EndCard, kept: CardParts) -> dict[str, Any]:
+    """The end card as a finished ad keeps it: when it starts and ends, the file of the photo
+    it drew (blank for none), and the whole card it was drawn from, `kept`, which the next
+    join compares to tell whether anything on it changed."""
+    photo = card.card.part(PartKind.PHOTO)
+    return {
+        "start": card.start,
+        "end": card.end,
+        "file": photo.file if photo is not None and photo.drawn else "",
+        "card": kept.record(),
+    }
 
 
 def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:

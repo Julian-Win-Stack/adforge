@@ -14,7 +14,8 @@ from chat import session_copy
 from chat.models import Folder, Message, Session
 from evals.owner_notes.chat import Chat, Notes, send_notes
 from gateway.fake import FakeModel, turn
-from jobs.models import AgentFixTry, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFixTry, Job, ProducedItem, Scene, SceneStep
+from jobs.work import end_card_parts
 
 from .conftest import HeldSteps
 from .scene_script import script_scene_agents
@@ -124,6 +125,9 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     Session.objects.filter(pk=original.pk).update(
         producer_seen_at=timezone.now(), producer_copy=uuid.uuid4(), producer_beat_at=timezone.now()
     )
+    # The end card's parts, kept on the job, go with it.
+    job = Job.objects.get(session=original)
+    Job.objects.filter(pk=job.pk).update(end_card=end_card_parts(job).record())
     before = snapshot(original)
     chat_before = api.get(f"/api/sessions/{original.pk}/").json()
     cards_before = api.get(f"/api/sessions/{original.pk}/scenes/").json()
@@ -145,6 +149,12 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
         label: len(rows) for label, rows in before.items()
     }
     assert_self_contained(copy, original)
+    assert Job.objects.get(session=copy).end_card == Job.objects.get(session=original).end_card
+    assert Job.objects.get(session=copy).end_card["parts"]
+    ads = ProducedItem.objects.filter(kind="finished_ad").order_by("pk")
+    assert [ad.end_card for ad in ads.filter(job__session=copy)] == [
+        ad.end_card for ad in ads.filter(job__session=original)
+    ]
     shown = api.get(f"/api/sessions/{copy.pk}/").json()
     assert [(m["role"], m["text"]) for m in shown["messages"]] == [
         (m["role"], m["text"]) for m in chat_before["messages"]
