@@ -66,7 +66,7 @@ A model in a loop that chooses which tool to call next: the producer, and one sc
 _Avoid_: Bot, assistant
 
 **Producer**:
-The one agent the user talks to for the whole session. Reads the page, chooses and plans, creates the person and music, starts scene agents and passes them later notes, assembles the ad and tells the owner what changed and cost.
+The one agent the user talks to for the whole session. Reads the page (its text, and its product photos as real pictures), chooses and plans, creates the person and music, starts scene agents and passes them later notes, assembles the ad and tells the owner what changed and cost.
 _Avoid_: Orchestrator, main agent, "the agent"
 
 **Scene agent**:
@@ -74,7 +74,7 @@ The agent that owns one scene, talking or B-roll, for the ad's whole life in one
 _Avoid_: Director, fixing agent, worker
 
 **Look**:
-A call the producer makes on its own model to see a picture, a clip's frames, a version, a library item or a sent list. It answers in words only (what is wrong, root cause, a direction) and decides nothing, so the producer's conversation never holds pictures.
+A call the producer makes on its own model to see a picture, a clip's frames, a version, a library item or a sent list. It answers in words only (what is wrong, root cause, a direction) and decides nothing. The producer's conversation holds the product photos it is given when the page is read (ADR 0016); every other picture, clip or version it sees through a look.
 _Avoid_: Decider, critic, look_at
 
 ### The work
@@ -91,9 +91,33 @@ _Avoid_: Version, copy, alternative
 One window of a scene agent's work, opened by the producer's instruction and the owner's checked quotes, with its own caps on starting-picture tries, end-picture tries and clips. It ends when a clip passes, the agent gives up or its clips run out. A later note opens another run in the same chat.
 _Avoid_: Session, fix, try
 
+**Ad style**:
+How a job's ad is made, kept on the job: **product shots** (silent scenes of the product, overlays and music, no presenter) or **person talking** (today's ad, the default). The owner reads the labels "Product shots" and "Person talking".
+_Avoid_: Hero, format, template
+
+**Buyer's doubt**:
+What stops a buyer who sees the product for the first time ("is it beautiful?", "can I trust it?", "how big is it?"). The producer names 2 or 3 per product and takes the ad style from the one that matters most.
+_Avoid_: Objection, pain point
+
+**Plan card**:
+The card the producer shows after the page is read, holding 1 to 3 questions, one of them always which plan; nothing is made until it is answered (ADR 0017). "Card" alone means the end card or a scene card.
+_Avoid_: Brief, form, questionnaire
+
+**Plan** (on a plan card):
+One of 3 ideas for the ad: its style, length, title, what it is built on, how it opens, and the buyer's doubt it answers. Not the scene-by-scene plan, written only once the card is answered.
+_Avoid_: Option, concept
+
+**Product option**:
+One of the things a page sells under one listing: a colour, a stone, a size.
+_Avoid_: Variant (a job that varies another job)
+
 **Scene**:
-One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll.
+One part of a job's ad and everything produced for it: one spoken line in a person-talking ad, or one silent shot in a product-shots ad. Its explicit kind is talking, B-roll or silent.
 _Avoid_: Shot, beat, clip, segment
+
+**Silent scene**:
+A product-shots ad's scene: no presenter and no spoken line. It has what it shows, the product photo it starts on, whether it is the real photo with a camera move or an AI-made scene, a camera move, an overlay and a length.
+_Avoid_: Product shot (that word names nothing in the code), hero shot
 
 **Talking scene**:
 A scene in which the presenter speaks to camera, face in frame, while showing, using or showing the result of the product. The first scene is always talking. Each names a **Talking style** and a **Product state**.

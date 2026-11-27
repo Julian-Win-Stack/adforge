@@ -216,6 +216,27 @@ SERVICE_OUT_OF_MONEY = _developer("service_out_of_money")
 # The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
 VOICE_FREED = _developer("voice_freed")
 
+# Product-shots ads and the plan card (prototype, specs #767 and #768).
+# A product photo couldn't be loaded into the producer's own conversation (#769).
+PRODUCER_PHOTO_NOT_SHOWN = _developer("producer_photo_not_shown")
+# A silent scene's real photo couldn't be fitted to the tall frame, so an AI-made starting
+# picture is used instead (#772).
+REAL_PHOTO_NOT_FITTED = _owner("real_photo_not_fitted")
+# The real photo's own pixels couldn't be pasted back over an extended background (#772).
+PIXELS_NOT_PASTED_BACK = _developer("pixels_not_pasted_back")
+# No beat was found in a product-shots ad's music, so it is cut at the planned lengths (#773).
+BEATS_NOT_FOUND = _developer("beats_not_found")
+# The producer called a tool the plan card locks before the card was answered (#777).
+PLAN_CARD_LOCKED = _developer("plan_card_locked")
+# The producer's plan card call couldn't make a valid card (#777).
+PLAN_CARD_INVALID = _developer("plan_card_invalid")
+# An answer arrived for a plan card that was replaced since (#781).
+PLAN_CARD_REPLACED = _owner("plan_card_replaced")
+# The plan of scenes couldn't keep the plan the owner picked (#778).
+PLAN_NOT_KEPT = _developer("plan_not_kept")
+# A run with nobody watching got no plan card in time (#782).
+NO_PLAN_CARD = _developer("no_plan_card")
+
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 
 

@@ -4203,7 +4203,7 @@ def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
     from the written line."""
     if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
         raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
-    seconds = h3_clip_seconds(len(step.line.split()))
+    seconds = sent.seconds or h3_clip_seconds(len(step.line.split()))
     videos = dict(step.scene.job.videos.values_list("position", "file"))
     if sent.mode == "start_frame":
         return BrollClipHandoff(
@@ -4927,8 +4927,13 @@ def assemble_ad(
     first clip's first word, cut to leave the ad opening on it, and any silence over
     assembly.AFTER_LAST_WORD_SECONDS after a clip's last word (#442). Captions use each
     clip's transcript, including historical audio-backed transcripts, when available. Keep
-    the result as the next ad version, with no model call.
+    the result as the next ad version, with no model call. A product-shots ad is put together
+    its own way (jobs.product_shots): no captions, no clip sound, every cut on a beat.
     """
+    from . import product_shots
+
+    if product_shots.is_product_shots(job):
+        return product_shots.assemble(job, [clip for clip, _ in scenes], music)
     whole = []
     timed = []
     last_words: list[float | None] = []

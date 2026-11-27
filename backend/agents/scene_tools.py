@@ -39,6 +39,7 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
+        silent = scene.kind == Scene.Kind.SILENT
         try:
             h3_clip_seconds(len(scene.line.split()))
         except ValueError as error:
@@ -47,7 +48,9 @@ class StartSceneAgent(Tool):
             ) from error
         if not self.instruction.strip():
             raise Refused("say what this scene must do in the producer's instruction.")
-        if work.latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
+        if silent and work.latest(scene.job, ProducedItem.Kind.MUSIC) is None:
+            raise Refused("make the music first: a product-shots ad is cut to its beat.")
+        if not silent and work.latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused("the presenter hasn't been made yet. Create the person first.")
         for kind in (
             SceneStep.Kind.STARTING_PICTURE,

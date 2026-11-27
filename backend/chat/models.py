@@ -217,6 +217,17 @@ class Message(models.Model):
         help_text="On code's notice that a pasted page was kept with too few photos: the page "
         "panel stays open for more photos until the shop owner answers. False otherwise.",
     )
+    plan_card = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The plan card the producer showed (its questions, choices and picks), with "
+        "its state: open, answered (with the answer) or replaced. Null on every other message.",
+    )
+    plan_card_answer = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="On the shop owner's message that answers a plan card: what they chose.",
+    )
     trace_id = models.CharField(
         max_length=32,
         blank=True,
