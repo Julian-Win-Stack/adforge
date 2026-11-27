@@ -22,6 +22,7 @@ from jobs import (
     owner_parts,
     page,
     plan_edits,
+    product_shots,
     scene_references,
     stale,
     work,
@@ -116,11 +117,13 @@ from . import (
 from .current_limits import current_limits
 from .hard_limits import hard_limits
 from .look import Look
-from .loop import Agent, Failed, Refused, Tool
+from .loop import Agent, Failed, Refused, Tool, ToolResult
 from .models import AskedChangeFiling, ToolCall
 from .money import dollars
+from .page_for_producer import page_for_producer
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
+from .shots_tools import ChooseAdStyle, PlanProductShots
 
 LEGACY_FIXING_AGENT = "fixing_agent"
 
@@ -144,8 +147,32 @@ PASTE_IN_THE_PANEL = (
 # What the shop owner is told when a page is read while the page panel is open.
 PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
 
+PRODUCT_SHOTS_RULES = """\
+Two ad styles. The shop owner reads only the labels "Product shots" and "Person talking"; \
+never call them anything else. "Person talking" is the ad described below. "Product shots" \
+is tall silent scenes of the product with no presenter, no spoken line and no voice: \
+overlays carry the words, music plays, every cut lands on a beat, and the end card is last.
+After the page is read, you are given its text and its product photos as pictures, labelled \
+by library number. Then call choose_ad_style: name the 2 or 3 doubts a first-time buyer has \
+about this product and take the style of the one that matters most: "is it beautiful, do I \
+want it?" is product shots; "can I trust it, is it worth it?" is person talking; "how big \
+is it, how does it look on me?" is a worn scene or a size reference inside either style. \
+Assume new buyers unless the owner says otherwise. A style the owner asked for in any \
+message is the style. Demo ads are not offered. Tell the owner the style and why in one \
+short sentence, then carry on without waiting.
+For product shots, write the scenes yourself with plan_product_shots: build the story on \
+the listing's most unusual selling point; every overlay in the page's or the owner's own \
+words; a scene that shows the exact product, its size or the product worn in the shop's \
+photo starts on that real photo; a scene the page has no photo for is an AI scene. Then \
+run_planning_checks, create_music in the plan's mood, and start_scene_agent for every \
+scene together, then assemble the ad. No person is created for product shots: the shop's \
+model photos are used as they are, unless the owner asks for a made-up person. The rules \
+below about the person, lines, talking and B-roll scenes are for person-talking ads."""
+
 INSTRUCTIONS = (
     OWNER_WORDS_RULE
+    + "\n"
+    + PRODUCT_SHOTS_RULES
     + "\n"
     + """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
@@ -359,14 +386,20 @@ class ReadPage(Tool):
             raise ValueError("the length has to be from 1 to 32,767 seconds")
         return seconds
 
-    def run(self, call: ToolCall) -> str:
+    def run(self, call: ToolCall) -> str | ToolResult:
         try:
-            return self._read(call)
+            told = self._read(call)
         except SavedPageMissing as error:
             notices.record(
                 call.session, notices.SAVED_PAGE_MISSING, str(error), Message.Level.PROBLEM
             )
             raise Failed(str(error)) from error
+        job = _the_job(call)
+        if job is None or not _page_read(job):
+            return told
+        # The producer reads the page and sees its photos itself (#769).
+        page_words, pictures = page_for_producer(job)
+        return ToolResult(f"{told}\n\n{page_words}", pictures)
 
     def _read(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -641,6 +674,11 @@ class PlanAd(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = _with_its_page(call, "the ad is planned from it")
+        if product_shots.is_product_shots(job):
+            raise Refused(
+                'the ad\'s style is "product shots": plan it with plan_product_shots, or choose '
+                '"person talking" with choose_ad_style first.'
+            )
         if job.scenes.exists():
             planned = job.model_calls.filter(
                 purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
@@ -1012,6 +1050,19 @@ class RunPlanningChecks(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
+        if product_shots.is_product_shots(job):
+            failed = product_shots.run_checks(job)
+            if failed is None:
+                return (
+                    "The checks passed: every overlay and the end card match the product page "
+                    "or what the owner said. Next: create_music, then start every scene."
+                )
+            post_notice(job, notices.PLANNING_CHECK_HANDED_BACK, failed, Message.Level.PROBLEM)
+            return (
+                f"{failed} Fix the overlay or end card from the page's or the owner's own words "
+                "with plan_product_shots (nothing is filmed yet) or edit_scene, then run the "
+                "planning checks again. Do not ask the shop owner."
+            )
         try:
             problem = run_checks(job)
         except LineTooShort as short:
@@ -1031,6 +1082,16 @@ class RunPlanningChecks(Tool):
             "line_length": "Split the scene or rewrite its line with the scene tools, then run "
             "the planning checks again. The clip limit applies to every scene, including "
             "talking scenes. Do not ask the shop owner.",
+            "owner_line_length": "Ask the shop owner, with splitting as your pick, in about "
+            'these words: "This line is too long for one clip. Split it into two scenes, '
+            'keeping every word (one extra clip)? Or shall I shorten it?" Make nothing for '
+            "this scene until they answer; the rest of the ad goes on. If they choose split: "
+            "cut the line at a natural break into consecutive pieces, every word kept in "
+            "order and each short enough for one clip (two pieces, more only if two are "
+            "still too long), with edit_scene for the first piece and add_scene right after "
+            "it for each other piece, owner_asked true. If they choose shorten: "
+            "shorten_owner_line. If they send a new line instead, use it as their new line. "
+            "Then run the planning checks again.",
         }[problem.about]
         text = f"{problem.detail} Why: {problem.reason} {fix}"
         post_notice(
@@ -1066,6 +1127,8 @@ class CreateMusic(Tool):
             raise Refused(not_passed)
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job)
+        if product_shots.is_product_shots(job):
+            prompt, seconds = product_shots.music_prompt(mood), product_shots.music_seconds(job)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
         music = made.order_by("version").last()
         cost = dollars(_spent_on_music(job, prompt, seconds))
@@ -1548,6 +1611,33 @@ class _SceneFields(_OwnerChange):
         return {name: getattr(self, name) for name in plan_edits.EDITABLE}
 
 
+class ShortenOwnerLine(Tool):
+    """Shorten the shop owner's own too-long line, only after they chose shortening over
+    splitting it. They are told the old line and the new one. Run the planning checks after."""
+
+    name = "shorten_owner_line"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        from jobs.owner_direction import keeps_exact_line
+
+        scene = _a_planned_scene(call, self.scene)
+        if not keeps_exact_line(scene):
+            raise Refused(f"scene {scene.number}'s line isn't the shop owner's own exact line.")
+        fits = work.shorten_owner_line(scene.job, scene)
+        scene.refresh_from_db()
+        if not fits:
+            return (
+                f'Scene {scene.number}\'s line was shortened to "{scene.line}" but still takes '
+                "too long to say: split it with edit_scene and add_scene."
+            )
+        return (
+            f'Scene {scene.number}\'s line is now "{scene.line}"; the owner was told. Run the '
+            "planning checks next."
+        )
+
+
 class EditScene(_SceneFields):
     """Change any of a scene's fields in the plan: its line, whether it shows the product or
     the person talking and what it shows, its labels, its part, its overlay. Hands back which
@@ -1919,6 +2009,14 @@ class AssembleAd(Tool):
             f"each clip with its own sound, up to {assembly.AFTER_LAST_WORD_SECONDS:g} "
             "seconds after its last word, with captions of the written line, "
         )
+        if product_shots.is_product_shots(job):
+            return (
+                f"Assembled the product-shots ad (version {ad.version}, {ad.seconds:g} seconds): "
+                "each silent clip cut on a beat of the music, no captions, the music alone, each "
+                f"scene's overlay and the end card, and showed it to the shop owner. "
+                f"{_listed(plays)}.{_spent_since_the_ad_before(call.session, ad)} Tell the "
+                "shop owner."
+            )
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
             f"{how}the music under the voice, each scene's overlay and the end card, and showed "
@@ -2681,12 +2779,15 @@ PRODUCER = Agent(
         UsePhotos,
         AddToLibrary,
         CantUseOwnerFiles,
+        ChooseAdStyle,
+        PlanProductShots,
         PlanAd,
         CreatePerson,
         RemakePerson,
         RunPlanningChecks,
         CreateMusic,
         EditScene,
+        ShortenOwnerLine,
         AddScene,
         RemoveScene,
         ReorderScenes,

@@ -1623,7 +1623,7 @@ def _paid_calls(
 class PlanningProblem:
     """A planning check the producer must fix with its scene tools before rendering."""
 
-    about: Literal["line", "line_length"]
+    about: Literal["line", "line_length", "owner_line_length"]
     detail: str
     reason: str
     # The scene the producer must fix.
@@ -2046,6 +2046,8 @@ def _fit_length(job: Job) -> bool | PlanningProblem:
             )
         if fit == "hand_back":
             return _line_too_long(scene, words_per_second)
+        if fit == "ask_owner":
+            return _owner_line_too_long(scene, words_per_second)
         if fit == "lengthen":
             _lengthen_line(job, scene, words_per_second)
         elif fit == "shorten_broll":
@@ -2093,7 +2095,7 @@ class LineTooShort(Exception):
     """The line still cannot fill a clip after its allowed lengthenings."""
 
 
-Fit = Literal["lengthen", "too_short", "shorten_broll", "hand_back"]
+Fit = Literal["lengthen", "too_short", "shorten_broll", "hand_back", "ask_owner"]
 
 
 def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | None:
@@ -2108,6 +2110,9 @@ def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | Non
 def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
     """Lengthen short lines, shorten long lines, then hand remaining problems to the producer."""
     seconds = line_seconds(scene.line, words_per_second)
+    if seconds > LONGEST_BROLL_LINE_SECONDS and keeps_exact_line(scene):
+        # The owner's exact line after the first ad is never cut without asking them (#793).
+        return "ask_owner"
     if seconds > LONGEST_BROLL_LINE_SECONDS:
         shortened = job.model_calls.filter(
             purpose="shorten_line",
@@ -2143,6 +2148,32 @@ def _line_too_long(scene: Scene, words_per_second: float) -> PlanningProblem:
         ),
         scene=scene,
     )
+
+
+def _owner_line_too_long(scene: Scene, words_per_second: float) -> PlanningProblem:
+    """Hand the owner's own too-long line to the producer, to ask the owner (#793)."""
+    seconds = line_seconds(scene.line, words_per_second)
+    return PlanningProblem(
+        about="owner_line_length",
+        detail=(
+            f"Scene {scene.number}'s line is the shop owner's own exact words and takes about "
+            f"{seconds:.1f} seconds to say, but a scene can last at most "
+            f'{LONGEST_BROLL_LINE_SECONDS} seconds: "{scene.line}"'
+        ),
+        reason="The owner's own words are never shortened without asking them.",
+        scene=scene,
+    )
+
+
+def shorten_owner_line(job: Job, scene: Scene) -> bool:
+    """Shorten the owner's too-long line after they chose it, the owner told the old and new
+    line; whether it fits one clip now."""
+    for _ in range(MOST_BROLL_SHORTENINGS):
+        _shorten_line(job, scene, most_words_in_a_broll_line(FIXED_WORDS_PER_SECOND))
+        scene.refresh_from_db()
+        if line_seconds(scene.line, FIXED_WORDS_PER_SECOND) <= LONGEST_BROLL_LINE_SECONDS:
+            return True
+    return False
 
 
 def _shorten_line(job: Job, scene: Scene, most_words: int) -> None:
@@ -2450,6 +2481,11 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
             f"scene {unchecked.number}'s line hasn't passed the fact check, and nothing is made "
             "until every line has. Run the planning checks first."
         )
+    from . import product_shots
+
+    if product_shots.is_product_shots(job):
+        # Silent scenes have no spoken line to fit; their lengths were checked when planned.
+        return None
     words_per_second = FIXED_WORDS_PER_SECOND
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
@@ -4203,7 +4239,7 @@ def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
     from the written line."""
     if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
         raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
-    seconds = h3_clip_seconds(len(step.line.split()))
+    seconds = sent.seconds or h3_clip_seconds(len(step.line.split()))
     videos = dict(step.scene.job.videos.values_list("position", "file"))
     if sent.mode == "start_frame":
         return BrollClipHandoff(
@@ -4927,8 +4963,13 @@ def assemble_ad(
     first clip's first word, cut to leave the ad opening on it, and any silence over
     assembly.AFTER_LAST_WORD_SECONDS after a clip's last word (#442). Captions use each
     clip's transcript, including historical audio-backed transcripts, when available. Keep
-    the result as the next ad version, with no model call.
+    the result as the next ad version, with no model call. A product-shots ad is put together
+    its own way (jobs.product_shots): no captions, no clip sound, every cut on a beat.
     """
+    from . import product_shots
+
+    if product_shots.is_product_shots(job):
+        return product_shots.assemble(job, [clip for clip, _ in scenes], music)
     whole = []
     timed = []
     last_words: list[float | None] = []

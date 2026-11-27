@@ -29,6 +29,14 @@ from .instructions import INSTRUCTIONS, instructions_for
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 from .make_end_picture import MakeEndPicture
+from .silent import (
+    SILENT_INSTRUCTIONS,
+    DrawSilentPicture,
+    FilmSilent,
+    UseRealPhoto,
+    is_silent,
+    scene_facts,
+)
 
 PENDING_NOTE_DELIVERED = SceneAgentRun.PENDING_DELIVERED
 AGENT = "scene_agent"
@@ -44,7 +52,25 @@ TOOLS: list[type[loop.Tool]] = [
     GiveUp,
     HandBack,
 ]
-AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
+# A silent scene's agent (a product-shots ad's scene, #770) has its own tools.
+SILENT_TOOLS: list[type[loop.Tool]] = [
+    LookAtLibrary,
+    LookAtTry,
+    UseRealPhoto,
+    DrawSilentPicture,
+    FilmSilent,
+    GiveUp,
+]
+AGENT_SPEC = loop.Agent(
+    name=AGENT,
+    purpose=PURPOSE,
+    instructions=INSTRUCTIONS,
+    tools=[*TOOLS, UseRealPhoto, DrawSilentPicture, FilmSilent],
+)
+
+
+def _tools_for(scene: Any) -> list[type[loop.Tool]]:
+    return SILENT_TOOLS if is_silent(scene) else TOOLS
 
 
 def current_run(fixing: AgentFix) -> SceneAgentRun:
@@ -133,8 +159,10 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     step = fixing.step
     step.scene.refresh_from_db()
     job = step.scene.job
-    clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
     scenes = list(job.scenes.order_by("number"))
+    if is_silent(step.scene):
+        return _silent_conversation(fixing, scenes)
+    clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
     plan = "\n".join(
         media._scene_facts(each, last=each is scenes[-1] and len(scenes) > 1) for each in scenes
     )
@@ -242,6 +270,61 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     ]
 
 
+def _silent_conversation(fixing: AgentFix, scenes: list[Any]) -> list[Happened]:
+    """A silent scene's conversation: the page, the product-shots plan, then every run's
+    instruction and tool call in order."""
+    step = fixing.step
+    job = step.scene.job
+    story = job.shots_plan or {}
+    intro = "\n\n".join(
+        [
+            f"The ad is for this product page: {job.product_url}",
+            f"You own scene {step.scene.number}.",
+            f"The ad's story: {story.get('story', '')} Built on: {story.get('built_on', '')}",
+            media._library_words(job),
+            "The whole plan:\n" + "\n".join(scene_facts(each) for each in scenes),
+            f"The page's words:\n{job.page_text}",
+        ]
+    )
+    happened: list[Happened] = [Said(by="user", text=intro)]
+    records = AgentFix.objects.filter(step__scene=step.scene, is_scene_agent=True).order_by(
+        "created_at", "pk"
+    )
+    for record in records:
+        windows = list(record.scene_runs.exclude(reason=PENDING_NOTE_DELIVERED).order_by("number"))
+
+        def add_window(window: SceneAgentRun) -> None:
+            happened.append(Said(by="user", text=f"Producer's instruction: {window.instruction}"))
+            if window.quotes:
+                happened.append(
+                    Said(
+                        by="user",
+                        text="Owner's words (checked word for word):\n"
+                        + "\n".join(quote["text"] for quote in window.quotes),
+                    )
+                )
+
+        said: list[dict[str, Any]] = list(record.said)
+        calls = lifecycle._calls(record).filter(finished_at__isnull=False)
+        for number, call in enumerate(calls):
+            while windows and windows[0].created_at <= call.created_at:
+                add_window(windows.pop(0))
+            happened.extend(media._said(said, number))
+            happened.append(
+                ToolUse(
+                    call_id=call.call_id,
+                    tool=call.tool,
+                    arguments=call.arguments,
+                    result=call.result,
+                    pictures=[Shown(**picture) for picture in call.pictures],
+                )
+            )
+        happened.extend(media._said(said, None))
+        for window in windows:
+            add_window(window)
+    return [happened[0], *media._fit(happened[1:], reserved=0, library_reserved=0)]
+
+
 def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = False) -> None:
     """Recover paid work in flight; a paused scene starts no untouched checkpoint."""
     recovering_paid = recovering and call.model_calls.exists()
@@ -320,11 +403,13 @@ def run(step: SceneStep) -> ProducedItem | None:
                 session=step.tool_call.session,
                 job=step.scene.job,
                 purpose=PURPOSE,
-                instructions=instructions_for(step.scene),
+                instructions=SILENT_INSTRUCTIONS
+                if is_silent(step.scene)
+                else instructions_for(step.scene),
                 conversation=_conversation(fixing),
                 tools=[
                     presenter_words(step.scene.job.person_gender).tool(tool.spec())
-                    for tool in TOOLS
+                    for tool in _tools_for(step.scene)
                 ],
                 since=fixing.created_at,
                 done=f"scene {step.scene.number}'s agent carried on",

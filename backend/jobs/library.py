@@ -456,6 +456,8 @@ class SentList(_Shape):
     )
     scene_run: int | None = Field(default=None, exclude_if=lambda value: value is None)
     voice_words: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # A silent scene's clip length, in whole seconds: it has no line to time it by.
+    seconds: int | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _within_the_video_apis_limits(self) -> Self:

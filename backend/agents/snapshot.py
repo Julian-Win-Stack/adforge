@@ -32,7 +32,8 @@ def ad_as_it_stands(session: Session) -> str:
     if job is None or not job.scenes.exists():
         return ""
     scenes = list(job.scenes.order_by("number"))
-    lines = [AD_AS_IT_STANDS, f"The plan: {len(scenes)} scenes."]
+    style = "product shots" if job.ad_style == "product_shots" else "person talking"
+    lines = [AD_AS_IT_STANDS, f"The plan ({style}): {len(scenes)} scenes."]
     lines += [_planned(scene) for scene in scenes]
     for scene in scenes:
         lines.append(f"Scene {scene.number}: {_versions(scene)} It cost {dollars(_cost(scene))}.")
@@ -62,6 +63,13 @@ def scene_in_full(scene: Scene) -> str:
 
 
 def _planned(scene: Scene) -> str:
+    if scene.kind == Scene.Kind.SILENT:
+        plan = scene.silent or {}
+        return (
+            f"{scene.number}. [silent, {plan.get('seconds')} s, {plan.get('start')} from library "
+            f"item {plan.get('photo')}, {plan.get('move')}] Shows: {scene.shows}"
+            + (f' Overlay: "{scene.overlay}".' if scene.overlay else "")
+        )
     return (
         f"{scene.number}. {scene.line}"
         + (f" (Shows, while the voice says it: {scene.shows})" if scene.shows else "")

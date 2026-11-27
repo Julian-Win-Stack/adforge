@@ -216,6 +216,32 @@ class Job(models.Model):
         help_text="The target and scene lines kept longer after automatic shortenings; "
         "a changed script must fit its target again.",
     )
+    ad_style = models.CharField(
+        max_length=20,
+        default="person_talking",
+        db_default="person_talking",
+        help_text='The ad style: "person_talking" (a person speaks to camera, the default) or '
+        '"product_shots" (silent scenes of the product, music and overlays only).',
+    )
+    style_doubts = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="The buyer's doubts the producer named for this product and the one it "
+        "chose the ad style from, for the developer; never shown to the shop owner.",
+    )
+    shots_plan = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="A product-shots ad's plan beyond its scenes: its story, the selling point "
+        "it is built on and the music's mood.",
+    )
+    chosen_plan = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The plan the shop owner picked on the plan card (style, length, title, "
+        "built on, opens, doubt, product option), or their own idea. Null until a plan card "
+        "is answered: the plan card's lock holds until then.",
+    )
     warnings = models.JSONField(
         default=list,
         blank=True,
@@ -478,6 +504,8 @@ class Scene(models.Model):
     class Kind(models.TextChoices):
         TALKING = "talking"
         BROLL = "broll", "B-roll"
+        # A product-shots ad's scene: no presenter and no spoken line.
+        SILENT = "silent"
 
     class Status(models.TextChoices):
         PLANNED = "planned"
@@ -505,6 +533,13 @@ class Scene(models.Model):
         blank=True,
         help_text="What a B-roll scene shows, in plain words, while the person's voice says "
         "the line over it. Blank for a scene where the person talks to camera.",
+    )
+    silent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="A silent scene's plan: the library number of the photo it starts on, "
+        '"real photo" or "ai scene", the camera move and its length in seconds. Null for '
+        "any other scene.",
     )
     overlay = models.TextField(
         blank=True,

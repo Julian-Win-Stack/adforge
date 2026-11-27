@@ -93,7 +93,8 @@ def finish_recovery(step: SceneStep) -> bool:
         return False
     scene = step.scene
     number = scene.number
-    if talking:
+    # A silent scene has no line to say to camera: after the extra try it is left out.
+    if talking or scene.kind == Scene.Kind.SILENT:
         # Preserve paid work and records while excluding the unfilmable scene from assembly.
         Scene.objects.filter(pk=scene.pk).update(removed_at=timezone.now())
         plan_edits._move_chat_scenes(scene.job, {number: None})

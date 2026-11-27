@@ -541,11 +541,11 @@ def has_sound(media: Path) -> bool:
     return bool(json.loads(probed)["streams"])
 
 
-def music_filters(music_seconds: float, ad_seconds: float) -> str:
-    """How the music is fitted under the ad: turned down to MUSIC_VOLUME, and cut to the
-    ad's length when it is longer, or faded out over its last MUSIC_FADE_SECONDS when it
-    runs out before the ad ends."""
-    fitted = [f"volume={MUSIC_VOLUME}"]
+def music_filters(music_seconds: float, ad_seconds: float, volume: float = MUSIC_VOLUME) -> str:
+    """How the music is fitted under the ad: turned down to `volume` (MUSIC_VOLUME under a
+    voice), and cut to the ad's length when it is longer, or faded out over its last
+    MUSIC_FADE_SECONDS when it runs out before the ad ends."""
+    fitted = [f"volume={volume}"]
     if music_seconds > ad_seconds:
         fitted.append(f"atrim=end={ad_seconds}")
     elif music_seconds < ad_seconds:
@@ -562,6 +562,8 @@ def join(
     drawn: Sequence[Caption],
     end_card: EndCard | None = None,
     photo: Path | None = None,
+    clip_sound: bool = True,
+    music_volume: float = MUSIC_VOLUME,
 ) -> None:
     """Cut each clip file to its part's picture and voice, join the pictures, in order, and
     the voices, in order, apart, as each plays at its own time, and put them together with
@@ -597,7 +599,7 @@ def join(
         # after it still start on time; a clip with no sound at all plays silence for its
         # voice's time.
         voice_seconds = round(cut.voice_end - cut.voice_start, 3)
-        if has_sound(clip):
+        if clip_sound and has_sound(clip):
             filters.append(
                 f"[{number}:a]atrim=start={cut.voice_clip_start}:end={cut.voice_clip_end},"
                 f"asetpts=PTS-STARTPTS,"
@@ -624,7 +626,9 @@ def join(
     music_input = len(parts) + (1 if end_card is not None and photo is not None else 0)
     inputs += ["-i", str(music)]
     ad_seconds = end_card.end if end_card is not None else parts[-1][1].end
-    filters.append(f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
+    filters.append(
+        f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds, music_volume)}[music]"
+    )
     # A picture that plays on past the last line plays over the music only. The voice is
     # padded without end and the mix cut at the ad's end: amix drops the voice it still holds
     # when the voice, its first input, ends while the longer music lags behind, which cut the
