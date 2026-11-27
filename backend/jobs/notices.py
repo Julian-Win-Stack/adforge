@@ -200,6 +200,9 @@ ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
 FACE_NOT_NOTED = _developer("face_not_noted")
 # No product photo could go on the end card (spec #401): it is drawn without one.
 END_CARD_WITHOUT_PHOTO = _developer("end_card_without_photo")
+# Every product photo shows a stranger's face, so the end card shows a page photo cropped to
+# the product, its face left out (#789). Not a failure: the card has its photo.
+END_CARD_PHOTO_CROPPED = _developer("end_card_photo_cropped", failure=False)
 # A clip's transcript has words but no usable time for its last one, so the clip plays to its
 # end, any silence after the line kept (#442).
 CLOSING_SILENCE_NOT_CUT = _developer("closing_silence_not_cut")

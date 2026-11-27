@@ -2287,8 +2287,8 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
         )
         raise Failed(
             "the clips and music couldn't be put together into the ad, as ffmpeg failed: "
-            f"{_last_line(str(failed))} Nothing was paid for, and every clip and the music "
-            "are kept."
+            f"{_last_line(str(failed))} No clip or music was paid for again, and every clip "
+            "and the music are kept."
             + (
                 ""
                 if isinstance(failed, AssemblyTimedOut)

@@ -2,19 +2,22 @@
 with ffmpeg, driven through the chat. The producer's model and the scene models are faked at
 the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
+import io
 import subprocess
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+import PIL.Image
 import pytest
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from adforge.file_store import read
 from gateway.fake import FakeModel, turn
+from gateway.models import ModelCall
 from jobs import assembly
-from jobs.models import Job, ProducedItem
+from jobs.models import Job, LibraryItem, ProducedItem
 from jobs.planning import END_CARD_SECONDS
 
 from .conftest import (
@@ -178,8 +181,8 @@ def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_n
     # developer.
     assert results_of("assemble_ad") == [
         "Failed: the clips and music couldn't be put together into the ad, as ffmpeg failed: "
-        "Output file #0 does not contain any stream. Nothing was paid for, and every clip and "
-        "the music are kept. Assembling the same clips again fails the same way."
+        "Output file #0 does not contain any stream. No clip or music was paid for again, and "
+        "every clip and the music are kept. Assembling the same clips again fails the same way."
     ]
     assert any(
         "ffmpeg couldn't put the ad together" in text and "does not contain any stream" in text
@@ -218,8 +221,8 @@ def test_an_ad_that_takes_too_long_to_put_together_is_a_failure_a_later_try_may_
     # Not said to fail the same way again: a slow machine may finish it next time.
     assert results_of("assemble_ad") == [
         "Failed: the clips and music couldn't be put together into the ad, as ffmpeg failed: "
-        "ffprobe took over 60 seconds. Nothing was paid for, and every clip and the music are "
-        "kept."
+        "ffprobe took over 60 seconds. No clip or music was paid for again, and every clip and "
+        "the music are kept."
     ]
     assert any("ffprobe took over 60 seconds" in text for _, text in recorded(api, session_id))
     assert ads() == []
@@ -576,4 +579,112 @@ def test_an_end_card_with_no_usable_photo_is_drawn_without_one_and_says_so(
     (ad,) = ads()
     assert ad.end_card is not None and ad.end_card["file"] == ""
     assert video(read(ad.file))[2] == pytest.approx(15 + END_CARD_SECONDS, abs=0.1)
-    assert any("could go on the end card" in text for _, text in recorded(api, session_id))
+    # The side picker's boxes fill both photos, so no crop could leave the face out: said why.
+    (said,) = [text for _, text in recorded(api, session_id) if "end card" in text]
+    assert "product photo 1: the product fills it" in said
+    assert "product photo 2: the product fills it" in said
+
+
+# The side picker's box around the product in a photo of a model wearing it: the middle of
+# the photo, the face left out above it.
+AROUND_THE_PRODUCT = {"left": 0.25, "top": 0.4, "right": 0.75, "bottom": 0.9}
+
+
+def boxed_around_the_product(request: Any) -> dict[str, Any]:
+    """The side picker's answer: a box around the product, not the face, in every photo."""
+    numbers = [int(line.split()[1].rstrip(":")) for line in request.handoff.model_dump()["photos"]]
+    return {
+        "sides": [],
+        "boxes": [{"photo": number, "box": AROUND_THE_PRODUCT} for number in numbers],
+        "left_out": [],
+    }
+
+
+def every_photo_shows_a_face(*, side_picker_asked: bool) -> None:
+    """Every page photo shows a stranger's face; the side picker's answer is kept for the ad
+    when `side_picker_asked`, else it hasn't been asked yet."""
+    job = Job.objects.get()
+    job.photos.update(has_face=True)
+    job.side_photos = None
+    # The scene pictures asked it while the scenes were made; as if they hadn't.
+    ModelCall.objects.filter(purpose="pick_side_photos").delete()
+    if side_picker_asked:
+        job.side_photos = {
+            "answer": {
+                "sides": [],
+                "boxes": [{"photo": n, "box": AROUND_THE_PRODUCT} for n in (1, 2)],
+                "left_out": [],
+            }
+        }
+    job.save(update_fields=["side_photos"])
+
+
+def crop_of(number: int) -> LibraryItem:
+    return LibraryItem.objects.get(source={"came_from": "true_crop", "of": number})
+
+
+def test_an_ad_whose_photos_all_show_a_face_ends_on_a_crop_of_one_around_the_product(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+) -> None:
+    every_photo_shows_a_face(side_picker_asked=False)
+    fake_model.answer_unscripted("pick_side_photos", boxed_around_the_product)
+    asked_before = len(paid_for())
+
+    assemble(fake_model, say)
+
+    # The side picker is asked for the end card, once. Photo 1 (400 x 300) crops too small to
+    # look sharp, so photo 2 (1600 x 1200) is cropped, and its crop checked for a face.
+    made = paid_for()[asked_before:]
+    assert made.count("pick_side_photos") == 1
+    assert made.count("note_face") == 1
+    (ad,) = ads()
+    crop = crop_of(2)
+    assert ad.end_card is not None and ad.end_card["file"] == crop.file
+    # The crop is the photo's own pixels, cut around the product with a margin.
+    with PIL.Image.open(io.BytesIO(read(crop.file))) as cut:
+        assert cut.size == (928, 696)
+        assert cut.getpixel((10, 10)) == (236, 229, 206)
+    assert shows_the_end_card(read(ad.file), 15 + END_CARD_SECONDS / 2)
+    texts = [text for _, text in recorded(api, session_id)]
+    assert not any("could go on the end card" in text for text in texts)
+    (cropped,) = [text for text in texts if "cropped" in text]
+    assert "product photo 2" in cropped
+    assert "product photo 1" in cropped and "too small" in cropped
+    (kept,) = [w for w in Job.objects.get().warnings if w["kind"] == "end_card_photo_cropped"]
+    assert kept["text"] == cropped
+
+
+def test_the_side_pickers_kept_answer_crops_the_end_card_photo_with_no_second_call(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    every_photo_shows_a_face(side_picker_asked=True)
+    asked_before = len(paid_for())
+
+    assemble(fake_model, say)
+
+    assert "pick_side_photos" not in paid_for()[asked_before:]
+    (ad,) = ads()
+    assert ad.end_card is not None and ad.end_card["file"] == crop_of(2).file
+
+
+def test_a_crop_that_still_shows_a_face_is_not_used(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+) -> None:
+    every_photo_shows_a_face(side_picker_asked=True)
+    fake_model.respond("note_face", {"has_face": True})
+
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert ad.end_card is not None and ad.end_card["file"] == ""
+    (said,) = [text for _, text in recorded(api, session_id) if "could go on the end card" in text]
+    assert "product photo 2: its crop still shows a face" in said
+    assert "product photo 1: its crop is too small" in said
