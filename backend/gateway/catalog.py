@@ -121,6 +121,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "scene_agent": "gpt-6.2-sol",
     "scene_picture_check": "gpt-6.2-sol",
     "draw_scene_picture": "gpt-image-2.5-sunburst",
+    # A wide real product photo's background extended above and below it (#772).
+    "extend_real_photo": "gpt-image-2.5-sunburst",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).

@@ -108,6 +108,11 @@ STEP_NOT_WRAPPED_UP = _developer("step_not_wrapped_up")
 SCENE_CLIP_NOT_CURRENT = _developer("scene_clip_not_current")
 SCENE_RECOVERY = _owner("scene_recovery", failure=False)
 SCENE_AGENT_GAVE_UP = _owner("scene_agent_gave_up")
+# A real-photo silent scene whose photo couldn't be used as it is, so an AI-made picture
+# starts it instead (#772).
+REAL_PHOTO_NOT_USED = _owner("real_photo_not_used")
+# The photo's own pixels couldn't be pasted back over its extended background (#772).
+PIXELS_NOT_PASTED_BACK = _developer("pixels_not_pasted_back")
 # Early scene hand-back for a hard limit the producer missed: the producer alone tells the owner.
 SCENE_HANDED_BACK = _developer("scene_handed_back")
 FIX_NOT_CARRIED_ON = _developer("fix_not_carried_on")

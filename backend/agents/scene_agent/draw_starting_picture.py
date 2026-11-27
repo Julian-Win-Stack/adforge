@@ -1,7 +1,7 @@
 """Draw from explicit picks, then check against the picture's inherited evidence."""
 
 import json
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from django.db import transaction
 from django.db.models import F, Max
@@ -220,6 +220,41 @@ def make_picture(
         starting=scene,
         making="edited picture" if editing else "starting picture",
     )
+    made = keep_picture(
+        call,
+        key,
+        prompt=prompt,
+        ruling=ruling,
+        photos=photos,
+        colour=colour,
+        form=form.model_dump(),
+        previous_picture=previous_picture,
+        editing=editing,
+        logo_record=logo_record,
+    )
+    return result(made)
+
+
+def keep_picture(
+    call: ToolCall,
+    key: str,
+    *,
+    prompt: str,
+    ruling: dict[str, object],
+    photos: list[SelectedPhoto],
+    colour: str | None,
+    form: dict[str, Any],
+    previous_picture: ProducedItem | None,
+    editing: ProducedItem | None = None,
+    logo_record: dict[str, Any] | None = None,
+) -> ProducedItem:
+    """Keep the picture at `key` as the scene's next starting picture of the agent's run,
+    with what it was made from, and show it in the chat while the scene has no clip."""
+    from . import current_run
+
+    assert call.agent_fix is not None
+    window = current_run(call.agent_fix)
+    scene = call.agent_fix.step.scene
     with transaction.atomic():
         version = (
             scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(
@@ -251,7 +286,7 @@ def make_picture(
                 ),
                 "photos": [photo.model_dump(exclude_none=True) for photo in photos],
                 **({"logo": logo_record} if logo_record is not None else {}),
-                "form": form.model_dump(),
+                "form": form,
                 "scene": {
                     field: getattr(scene, field)
                     for field in ("line", "shows", "person_shown", "place_id")
@@ -277,7 +312,7 @@ def make_picture(
                     )
                 ],
             )
-    return result(made)
+    return made
 
 
 # Her talking takes only her face from the portrait and only the room from the room alone; its
