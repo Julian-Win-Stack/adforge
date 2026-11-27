@@ -152,3 +152,26 @@ test("a card answered before the page was opened shows what was chosen", async (
   expect(chosen.disabled).toBe(true);
   expect(screen.getByText("Answered")).toBeTruthy();
 });
+
+test("a replaced card is greyed with its buttons off, and the newest one is open", async () => {
+  const newer = { ...CARD, id: 8, opening: "Here are 3 plans at 30 seconds." };
+  await session([
+    LINK,
+    said("agent", "", { plan_card: CARD }),
+    said("user", "Make them 30 seconds"),
+    said("agent", "", { plan_card: newer }),
+  ]);
+
+  const [old, open] = screen.getAllByRole("form", { name: "Plan card" });
+  expect(old.className).toContain("replaced");
+  expect(within(old).getByText("Replaced")).toBeTruthy();
+  expect(within(old).getByRole("button", { name: "Make this ad" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(within(old).queryByRole("button", { name: "Use the agent's picks" })).toBeNull();
+  expect(within(open).getByRole("button", { name: "Make this ad" })).toHaveProperty(
+    "disabled",
+    false,
+  );
+});

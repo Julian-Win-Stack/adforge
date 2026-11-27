@@ -240,6 +240,15 @@ class NotOpen(Exception):
     """The card was already answered or replaced, so it takes no answer."""
 
 
+class Replaced(NotOpen):
+    """A newer card replaced the card, so only the newer one takes an answer."""
+
+
+# What the shop owner is told when they answer a card a newer one replaced, as from a tab
+# left open on the old one.
+ANSWER_THE_NEWEST = "That card was replaced. Please answer the newest one."
+
+
 class NotAChoice(ValueError):
     """An answer that names a question the card hasn't got, or a choice it hasn't."""
 
@@ -249,11 +258,14 @@ def answer(card: PlanCard, choices: dict[str, int] | None) -> Message:
     from 0), any question left out taking the producer's pick, or with every pick when
     `choices` is None ("Use the agent's picks"). Keeps the chosen plan on the job, sets the
     ad's length to the plan's, and posts the owner's message saying what was chosen, which
-    the producer reads. Raises NotOpen for a card answered or replaced already, NotAChoice
-    for a choice the card hasn't got. Call it under the session's work lock."""
+    the producer reads. Raises Replaced for a card a newer one replaced (the shop owner is
+    told to answer the newest), NotOpen for one answered already, NotAChoice for a choice
+    the card hasn't got. Call it under the session's work lock."""
     with transaction.atomic():
         card = PlanCard.objects.select_for_update().get(pk=card.pk)
-        if card.answered_at is not None or card.replaced_at is not None:
+        if card.replaced_at is not None and card.answered_at is None:
+            raise Replaced
+        if card.answered_at is not None:
             raise NotOpen
         questions = card.card["questions"]
         keys = {question["key"] for question in questions}

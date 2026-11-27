@@ -220,6 +220,8 @@ VOICE_FREED = _developer("voice_freed")
 PLAN_CARD_LOCKED = _developer("plan_card_locked")
 # The producer's show_plan_card call couldn't make a card that can be shown (#777).
 PLAN_CARD_INVALID = _developer("plan_card_invalid")
+# An answer came for a plan card a newer one replaced, as from a stale tab (#781).
+PLAN_CARD_REPLACED = _owner("plan_card_replaced", failure=False)
 # A run with nobody watching (an eval or an ad-run script) got no plan card to answer (#782).
 NO_PLAN_CARD = _developer("no_plan_card")
 

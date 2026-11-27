@@ -15,8 +15,9 @@ from adforge import file_store
 from agents import card_picks, page_panel, pause, plan_card
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
-from jobs import card_versions, owner_checks, work
+from jobs import card_versions, notices, owner_checks, work
 from jobs.models import PlanCard, ProducedItem, Scene
+from jobs.notices import post_notice
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages, session_copy
@@ -795,6 +796,16 @@ def answer_plan_card(request: Request, session_id: str, card_id: int) -> Respons
             return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
         try:
             message = plan_card.answer(card, choices)
+        except plan_card.Replaced:
+            post_notice(
+                card.job,
+                notices.PLAN_CARD_REPLACED,
+                plan_card.ANSWER_THE_NEWEST,
+                Message.Level.INFO,
+            )
+            return Response(
+                {"detail": plan_card.ANSWER_THE_NEWEST}, status=status.HTTP_409_CONFLICT
+            )
         except plan_card.NotOpen:
             return Response(
                 {"detail": "This plan card was already answered."},

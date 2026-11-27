@@ -227,3 +227,54 @@ def test_a_message_in_the_chat_never_unlocks_and_no_nudge_is_sent_while_the_card
     assert "plan card must be shown and answered first" in results_of("plan_ad")[0]
     assert Job.objects.get().chosen_plan is None
     assert not SystemNote.objects.filter(kind=SystemNote.Kind.NUDGE).exists()
+
+
+def test_a_question_while_the_card_is_open_gets_an_answer_and_the_card_stays(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(producer, product_page_url)
+    producer.told(
+        "What's the difference between the first two?",
+        "The first is about heat, the second about fitting the cup holder.",
+    )
+
+    assert chat(api, session_id)[-1] == (
+        "agent",
+        "The first is about heat, the second about fitting the cup holder.",
+    )
+    assert _the_card(api, session_id)["state"] == "open"
+    assert Job.objects.get().model_calls.filter(purpose="plan_ad").count() == 0
+
+
+def _cards(api: APIClient, session_id: str) -> list[dict[str, Any]]:
+    return [m["plan_card"] for m in _messages(api, session_id) if m.get("plan_card")]
+
+
+def test_a_changed_plan_replaces_the_card_and_only_the_newest_takes_an_answer(
+    producer: ScriptedProducer, product_page_url: str, api: APIClient, session_id: str
+) -> None:
+    _card_shown(producer, product_page_url)
+    longer = {**CARD, "plans": [{**plan, "seconds": 30} for plan in PLANS]}
+    producer.told(
+        "Make them 30 seconds",
+        turn(calls=[("show_plan_card", {**longer, "why": "They want 30 seconds."})]),
+    )
+
+    old, new = _cards(api, session_id)
+    assert old["state"] == "replaced"
+    assert new["state"] == "open"
+    assert [plan["seconds"] for plan in new["questions"][0]["choices"]] == [30, 30, 30]
+
+    stale = _answer(api, session_id, old["id"], use_picks=True)
+
+    assert stale.status_code == 409
+    assert chat(api, session_id)[-1] == (
+        "notice",
+        "That card was replaced. Please answer the newest one.",
+    )
+    assert _kinds("plan_card_replaced") == ["plan_card_replaced"]
+    assert Job.objects.get().chosen_plan is None
+
+    producer.fake_model.respond("produce", turn(says="On it."))
+    assert _answer(api, session_id, new["id"], use_picks=True).status_code == 201
+    assert Job.objects.get().target_seconds == 30
