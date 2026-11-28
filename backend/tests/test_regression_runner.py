@@ -372,3 +372,96 @@ def test_running_the_same_name_again_resumes_an_unfinished_scenario_where_it_sto
     ]
     assert "check_page" not in purposes
     assert "fact_check" in purposes
+
+
+PLANS = [
+    {
+        "style": "person_talking",
+        "seconds": seconds,
+        "title": title,
+        "built_on": f"{title} is what sets it apart.",
+        "opens": f"Opens on {title}.",
+        "doubt": "Does it work?",
+    }
+    for title, seconds in (("Softer hair", 33), ("One wash", 35), ("No sulphates", 34))
+]
+CARD = {
+    "opening": "Here are 3 plans.",
+    "product_option": None,
+    "option_named": "",
+    "plans": PLANS,
+    "plans_pick": 1,
+}
+
+
+def script_card_then_plan(fake_model: FakeModel, scenario: Scenario) -> None:
+    """The producer reads the page and shows the plan card, then plans once it is answered."""
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", h3_plan())
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
+        turn(calls=[("show_plan_card", {**CARD, "other": None})]),
+        turn(calls=[("plan_ad", {}), ("create_person", {})]),
+    )
+
+
+def _run(store: Store, scenario: Scenario, **more: object) -> object:
+    ledger = SpendLedger(store.run_dir("first") / "spend.json", Decimal("5"), pacing=False)
+    return run_scenario(
+        store,
+        "first",
+        scenario,
+        ledger,
+        database_url=url_for_database(connection.settings_dict["NAME"]),
+        execution="test-database",
+        **more,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.plan_card
+@pytest.mark.parametrize(("pick", "seconds"), [(None, 33), (2, 35)], ids=["picks", "second"])
+def test_a_run_answers_the_plan_card_itself_and_reaches_the_plan(
+    pick: int | None,
+    seconds: int,
+    saved_scenario: tuple[Store, Scenario],
+    fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store, scenario = saved_scenario
+    script_card_then_plan(fake_model, scenario)
+
+    result = _run(store, scenario, plan=pick)
+
+    assert result.status == "done", result.reason  # type: ignore[attr-defined]
+    job = Job.objects.get()
+    assert job.target_seconds == seconds
+    assert job.scenes.count() == 3
+    said = capsys.readouterr().out
+    assert "plan card: 1. Softer hair, 2. One wash, 3. No sulphates" in said
+    assert ("answered: the agent's picks" if pick is None else "answered: plan 2") in said
+    # Regression runs pin the person-talking style in the first message.
+    first = job.session.messages.order_by("seq").first()  # type: ignore[union-attr]
+    assert first is not None and first.text.endswith("Make it a person talking ad.")
+
+
+@pytest.mark.plan_card
+def test_a_run_whose_producer_never_shows_a_plan_card_stops_with_a_notice(
+    saved_scenario: tuple[Store, Scenario], fake_model: FakeModel
+) -> None:
+    store, scenario = saved_scenario
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
+        turn(says="I read the page."),
+    )
+
+    result = _run(store, scenario)
+
+    assert result.status == "stopped"  # type: ignore[attr-defined]
+    assert "no plan card" in result.reason  # type: ignore[attr-defined]
+    kinds = [warning["kind"] for warning in Job.objects.get().warnings]
+    assert "no_plan_card" in kinds
+    assert "no plan card" in (store.run_dir("first") / "spend.json").read_text()

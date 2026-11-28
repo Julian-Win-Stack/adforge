@@ -55,6 +55,8 @@ PASTE_REFUSED = _owner("paste_refused", asks=True)
 PASTE_KEPT = _owner("paste_kept", failure=False)
 # A pasted page kept with too few photos: the panel stays open for more.
 PASTE_WANTS_PHOTOS = _owner("paste_wants_photos", failure=False, asks=True)
+# The shop owner chose a product option on the plan card that no product photo shows (#780).
+PRODUCT_OPTION_WITHOUT_PHOTO = _owner("product_option_without_photo", asks=True)
 PANEL_CLOSED = _owner("panel_closed", failure=False)
 PART_DRAWN = _owner("part_drawn", failure=False)
 # The fixing agent's question: the ad never waits for its answer (round 7 spec section 4).
@@ -227,6 +229,18 @@ SECOND_COPY_QUIT = Kind("second_copy_quit", for_owner=False, failure=False)
 SERVICE_OUT_OF_MONEY = _developer("service_out_of_money")
 # The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
 VOICE_FREED = _developer("voice_freed")
+
+# The producer called a tool the plan card locks before the card was answered (#777).
+PLAN_CARD_LOCKED = _developer("plan_card_locked")
+# The producer's show_plan_card call couldn't make a card that can be shown (#777).
+PLAN_CARD_INVALID = _developer("plan_card_invalid")
+# An answer came for a plan card a newer one replaced, as from a stale tab (#781).
+PLAN_CARD_REPLACED = _owner("plan_card_replaced", failure=False)
+# The plan of scenes couldn't keep what the owner picked on the plan card (#778).
+PLAN_NOT_KEPT = _developer("plan_not_kept")
+
+# A run with nobody watching (an eval or an ad-run script) got no plan card to answer (#782).
+NO_PLAN_CARD = _developer("no_plan_card")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 

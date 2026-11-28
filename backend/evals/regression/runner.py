@@ -49,6 +49,15 @@ class ScenarioStopped(BaseException):
     """The eval needs an input or reached its explicit terminal boundary."""
 
 
+class NoPlanCard(ScenarioStopped):
+    """The producer stopped without showing the plan card the ad waits on (spec #768)."""
+
+
+# What every regression run's first message adds, so its 3 plans are all person talking and
+# the baseline still compares like with like (spec #768).
+STYLE_PIN = "Make it a person talking ad."
+
+
 class PictureReached(BaseException):
     """One scene reached its real, checked pre-film boundary."""
 
@@ -393,8 +402,9 @@ def _drive(
     boundary: PlansBoundary,
     *,
     to: Literal["plans", "pictures", "full"],
+    plan: int | None = None,
 ) -> None:
-    from agents import tasks
+    from agents import plan_card, tasks
     from jobs.models import Job
 
     while True:
@@ -422,7 +432,45 @@ def _drive(
             and Job.objects.filter(session_id=session_id, produced__kind="finished_ad").exists()
         ):
             return
+        if _answer_the_card(api, session_id, plan):
+            continue
+        made = Job.objects.filter(session_id=session_id).first()
+        if (
+            made is not None
+            and plan_card.page_read(made)
+            and made.chosen_plan is None
+            and not made.scenes.exists()
+        ):
+            raise NoPlanCard("the producer stopped with no plan card to answer")
         raise ScenarioStopped("producer stopped before the requested stage was finished")
+
+
+def _answer_the_card(api: APIClient, session_id: str, plan: int | None) -> bool:
+    """Answer the session's open plan card as a shop owner pressing "Use the agent's picks"
+    would, or picking plan number `plan` (from 1), through the chat's own answer, and print
+    the card and the answer. Gives whether there was a card to answer."""
+    from agents import plan_card
+    from chat.models import Session
+
+    card = plan_card.open_card(Session.objects.get(pk=session_id))
+    if card is None:
+        return False
+    [plans] = [q for q in card.card["questions"] if q["key"] == "plan"]
+    titles = ", ".join(f"{n}. {p['title']}" for n, p in enumerate(plans["choices"], start=1))
+    sent: dict[str, object] = (
+        {"use_picks": True} if plan is None else {"choices": {"plan": plan - 1}}
+    )
+    answered = api.post(
+        f"/api/sessions/{session_id}/plan-cards/{card.pk}/answer/", sent, format="json"
+    )
+    if answered.status_code != 201:
+        raise RuntimeError(f"the plan card's answer was refused ({answered.status_code})")
+    print(
+        f"plan card: {titles}; answered: "
+        + ("the agent's picks" if plan is None else f"plan {plan}"),
+        flush=True,
+    )
+    return True
 
 
 def _send(api: APIClient, session_id: str, text: str) -> None:
@@ -472,10 +520,12 @@ def run_scenario(
     to: Literal["plans", "pictures", "full"] = "plans",
     replay: ReplaySource | None = None,
     resume: ResumePoint | None = None,
+    plan: int | None = None,
 ) -> ScenarioResult:
     """Drive one real in-process chat in the caller's already isolated database: a new
     one, or the one restored from `replay`'s baseline or from `resume`, this run's own save
-    of the scenario, which carries on where it was."""
+    of the scenario, which carries on where it was. Its plan card is answered with the
+    agent's picks, or with plan number `plan` (from 1)."""
     from rest_framework.test import APIClient
 
     from agents.execution_boundary import use_execution_boundary
@@ -538,7 +588,7 @@ def run_scenario(
                     pinned_ad_style=AdStyle.PERSON_TALKING
                 )
                 question_starts[result.session_id] = started_at
-                _send(api, result.session_id, scenario.first_message)
+                _send(api, result.session_id, f"{scenario.first_message}\n{STYLE_PIN}")
             else:
                 from agents import tasks
 
@@ -555,10 +605,15 @@ def run_scenario(
                     )
                 else:
                     tasks.wake_producer(result.session_id)
-            _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
+            _drive(api, result.session_id, scenario, dispatch, boundary, to=to, plan=plan)
             result.status = "done"
     except PlanReached:
         result.status = "done"
+    except NoPlanCard as stopped:
+        result.status, result.reason = "stopped", str(stopped)
+        ledger.stop(scenario.key, result.reason)
+        if job_now := Job.objects.filter(session_id=str(result.session_id)).first():
+            notices.post_notice(job_now, notices.NO_PLAN_CARD, result.reason, Message.Level.PROBLEM)
     except (SpendLimitReached, ScenarioStopped) as stopped:
         result.status, result.reason = "stopped", str(stopped)
     except MissingPrefix as stopped:
@@ -680,6 +735,7 @@ def _scenario_process(
     to: Literal["plans", "pictures", "full"],
     from_stage: Stage | None = None,
     baseline: str | None = None,
+    plan: int | None = None,
 ) -> None:
     result = ScenarioResult(scenario.key)
     try:
@@ -728,6 +784,7 @@ def _scenario_process(
                         to=to,
                         replay=replay,
                         resume=resume,
+                        plan=plan,
                     )
                     connections.close_all()
     except (SpendLimitReached, ScenarioStopped) as stopped:
@@ -778,8 +835,10 @@ def run(
     pacing: bool = True,
     to: Literal["plans", "pictures", "full"] = "plans",
     from_stage: Stage | None = None,
+    plan: int | None = None,
 ) -> int:
-    """Run the selected scenarios in separate fresh databases and save each as it ends."""
+    """Run the selected scenarios in separate fresh databases and save each as it ends. Each
+    plan card is answered with the agent's picks, or with plan number `plan` (from 1)."""
     if parallel < 1:
         raise ValueError("--parallel must be at least one")
     if not scenarios:
@@ -879,6 +938,7 @@ def run(
                     to,
                     from_stage,
                     record.get("baselines", {}).get(scenario.key),
+                    plan,
                 ),
             )
             process.start()
@@ -945,6 +1005,12 @@ def main(argv: Sequence[str], *, store: Store) -> int:
     parser.add_argument("--name", default=None)
     parser.add_argument("--parallel", type=int, default=6)
     parser.add_argument("--yes", action="store_true")
+    parser.add_argument(
+        "--plan",
+        type=int,
+        choices=[1, 2, 3],
+        help="answer each plan card with this plan instead of the agent's picks",
+    )
     args = parser.parse_args(argv)
     name = args.name or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     keys = args.only
@@ -960,6 +1026,7 @@ def main(argv: Sequence[str], *, store: Store) -> int:
             parallel=args.parallel,
             to=args.to,
             from_stage=args.from_stage,
+            plan=args.plan,
         )
     except (ValueError, EOFError) as error:
         print(f"Cannot run: {error}")

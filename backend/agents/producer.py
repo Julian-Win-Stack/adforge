@@ -22,6 +22,7 @@ from jobs import (
     owner_parts,
     page,
     plan_edits,
+    product_options,
     product_shots,
     scene_references,
     stale,
@@ -111,6 +112,7 @@ from . import (
     loop,
     note_photos,
     page_for_producer,
+    plan_card,
     snapshot,
     step_signals,
     voice_changes,
@@ -121,6 +123,7 @@ from .look import Look
 from .loop import Agent, Failed, Refused, Tool, ToolResult
 from .models import AskedChangeFiling, ToolCall
 from .money import dollars
+from .plan_card import ShowPlanCard, TakeOwnersIdea
 from .scene_agent.lifecycle import PLACE_NAMES
 from .scene_tools import PassNote, StartSceneAgent
 from .shots_tools import ChooseAdStyle, MakeUpAPerson, PlanProductShots
@@ -153,13 +156,12 @@ Two ad styles. The shop owner reads only the labels "Product shots" and "Person 
 never call them anything else. "Person talking" is the ad described below. "Product shots" \
 is tall silent scenes of the product with no presenter, no spoken line and no voice: \
 overlays carry the words, music plays, and the end card is last.
-After the page is read, call choose_ad_style: name the 2 or 3 doubts a first-time buyer has \
-about this product and take the style of the one that matters most. "Is it beautiful, do I \
-want it?" is product shots; "can I trust it, is it worth it?" is person talking; "how big is \
-it, how does it look on me?" is a worn scene or a size reference inside either style. Assume \
-new buyers unless the shop owner says otherwise. A style the owner asked for in any message \
-is the style, and a new ask changes it. Demo ads are not offered. Tell the owner the style \
-and why in one short sentence, then carry on without waiting.
+Each plan on the plan card takes the style of the buyer's doubt it answers. "Is it \
+beautiful, do I want it?" is product shots; "can I trust it, is it worth it?" is person \
+talking; "how big is it, how does it look on me?" is a worn scene or a size reference inside \
+either style. A style the owner asked for in any message is the style of every plan. Demo \
+ads are not offered. The style of the plan the owner picks is the ad's style, set for you; \
+call choose_ad_style only when they ask for another style after answering the card.
 For product shots, write the scenes yourself with plan_product_shots: build the story on \
 the listing's most unusual selling point, and write every overlay in the page's or the \
 owner's own words. Start a scene on the real photo wherever the buyer must trust what they \
@@ -187,8 +189,9 @@ You work by calling tools. Call one when you need it, read what it hands back, a
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, reply to them. Never end a reply with a \
 question to the owner. Decide, act, and say what you chose in one short sentence.
-The usual order is: read the page, plan the ad, create the person, run the planning
-checks, create the music, and call start_scene_agent for every scene once its presenter
+The usual order is: read the page, show the plan card and wait for its answer, plan the \
+ad, create the person, run the planning checks, create the music, and call \
+start_scene_agent for every scene once its presenter
 and checked line exist. Start all ready scenes together in one turn, without waiting for
 one to finish before starting another. Give each scene your own instruction and exact
 chunks of the owner's messages in quotes. Code checks those quotes; if refused, quote
@@ -244,6 +247,25 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
+Once the page is read, show the plan card with show_plan_card before anything is planned \
+or made: every tool that plans, makes or starts work refuses until the shop owner answers \
+it, and a message in the chat doesn't answer it. The card is the one place you ask them \
+anything. Write 3 plans from what the page says. First name the 2 or 3 doubts a buyer \
+seeing this product for the first time has, assuming new buyers unless the shop owner says \
+otherwise; each plan answers one of them. Build each plan on one thing this listing has \
+that similar products don't, and say in one sentence how it opens: a person talking plan \
+opens on the person talking to camera, as every rule below for that style holds. The plans \
+differ for a \
+reason: each answers a different doubt or tells its story another way. """
+    + plan_card.STYLES_RULE
+    + """Mark your pick. Leave out a question the shop owner's messages already answered, and \
+treat its answer as given; the plans question is always there. Ask which product option the \
+ad is for only when read_page listed two or more and they haven't said, using the page's own \
+names, plus one choice for all of them together when that makes sense; when they already \
+named one, give it as option_named instead. The ad then shows only that option. At most one \
+more question of your own. When their answer comes, plan the ad. While the card is open, answer \
+their messages as usual; when what they say changes a plan, the product option or a \
+length, show a new card in its place, and a message that only asks something leaves it.
 Before the first plan, call plan_ad. It picks the main-looking size or pack and its
 price, uses the clear product photos it has, draws any missing part and plans ordinary
 use when the page doesn't describe it. After planning, tell the owner its choices in one
@@ -482,6 +504,10 @@ class ReadPage(Tool):
         if picked.colours:
             job.colours = list(picked.colours)
             job.save(update_fields=["colours"])
+        # The product options too, before any photo is labelled with one (#780).
+        if picked.options:
+            job.product_options = list(picked.options)
+            job.save(update_fields=["product_options"])
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
         # the notice already names, not a doubt about this page's photos.
         declared = picked.urls is None and read.marked is not None
@@ -543,6 +569,11 @@ class ReadPage(Tool):
         if download.final_url != self.link:
             told.append(f"The link led to {download.final_url}, so that is the page read.")
         told.append(f"Kept {_photos(kept)}.")
+        if product_options.offered(job):
+            told.append(
+                "The page sells these product options: "
+                f"{'; '.join(job.product_options)}. Ask which one the ad is for on the plan card."
+            )
         told += unread_videos
         if skipped:
             told.append(f"Skipped {len(skipped)} photo{'s' if len(skipped) != 1 else ''}:")
@@ -686,6 +717,7 @@ class PlanAd(Tool):
     person who presents it. Choose with the evidence available and report the choices."""
 
     name = "plan_ad"
+    waits_for_the_plan_card = True
     stops_ad_when_filter_blocks = True
 
     def run(self, call: ToolCall) -> str:
@@ -728,7 +760,23 @@ class PlanAd(Tool):
             _the_plan(job, decision.reason)
             + _tell_plan_choices(job, decision.choices)
             + _parts_drawn(job)
+            + _plan_not_kept(job, decision.plan_not_kept)
         )
+
+
+def _plan_not_kept(job: Job, why: str) -> str:
+    """What of the shop owner's chosen plan the plan of scenes couldn't keep, recorded for
+    the developer and handed to the producer to tell them; "" when it kept it all."""
+    why = " ".join(why.split())
+    if not why or job.chosen_plan is None:
+        return ""
+    post_notice(
+        job,
+        notices.PLAN_NOT_KEPT,
+        f"The plan of scenes couldn't keep the plan the owner picked: {why}",
+        Message.Level.PROBLEM,
+    )
+    return f"\nTell the shop owner in one short sentence: {why}"
 
 
 def _tell_plan_choices(job: Job, choices: str) -> str:
@@ -768,6 +816,7 @@ class CreatePerson(Tool):
     The portrait is shown now; the voice is heard in the clips, with no advance sample."""
 
     name = "create_person"
+    waits_for_the_plan_card = True
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -803,6 +852,7 @@ class RemakePerson(Tool):
     their scene agents. Nothing is filmed until you call them. Look at the new portrait first."""
 
     name = "remake_person"
+    waits_for_the_plan_card = True
 
     remake: Literal["look", "voice", "both"] = Field(
         description='What to make again: "look" for a new portrait, "voice" for new voice words, '
@@ -997,6 +1047,7 @@ class SetPlace(Tool):
     clip again. Look at it (look, what "place") before you do."""
 
     name = "set_place"
+    waits_for_the_plan_card = True
 
     scene: int = Field(description="The number of the scene.")
     new_place: str | None = Field(
@@ -1139,6 +1190,7 @@ class CreateMusic(Tool):
     have passed."""
 
     name = "create_music"
+    waits_for_the_plan_card = True
 
     mood: str = Field(
         min_length=1,
@@ -1201,6 +1253,7 @@ class MakePicture(Tool):
     or why it couldn't be made."""
 
     name = "make_picture"
+    waits_for_the_plan_card = True
 
     prompt: str = Field(
         description="What to draw, in full: the picture model reads only this and the "
@@ -1744,6 +1797,7 @@ class AddScene(_SceneFields):
     later. It has nothing made yet: run the planning checks on it, then make its steps."""
 
     name = "add_scene"
+    waits_for_the_plan_card = True
 
     at: int = Field(description="The new scene's number: 1 to one past the last scene.")
 
@@ -2057,6 +2111,7 @@ class AssembleAd(Tool):
     Costs nothing."""
 
     name = "assemble_ad"
+    waits_for_the_plan_card = True
     runs_while_paused = True
 
     def run(self, call: ToolCall) -> str:
@@ -2857,6 +2912,8 @@ PRODUCER = Agent(
         SeePage,
         AddToLibrary,
         CantUseOwnerFiles,
+        ShowPlanCard,
+        TakeOwnersIdea,
         ChooseAdStyle,
         PlanProductShots,
         MakeUpAPerson,
@@ -2894,4 +2951,5 @@ PRODUCER = Agent(
     asks_again=True,
     snapshot=snapshot.ad_as_it_stands,
     holds_the_turn=note_photos.hold_the_turn,
+    gate=plan_card.hold,
 )

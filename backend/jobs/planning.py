@@ -580,6 +580,9 @@ PLAN_INSTRUCTIONS = (
     "No price on the page means no price in any line, overlay or end card. "
     "If the page contradicts itself on a fact a line or overlay would state, leave that "
     "fact out. Never stop to ask.\n"
+    "When chosen_plan is given, the shop owner picked that plan for the ad before it was "
+    "planned: build the ad's story on what it is built on, open the way it opens, and fit "
+    "its length. Every other rule here still holds.\n"
     "When photo_worry says the photos are in doubt, plan with the photos that clearly "
     "show this product. A product small among other products or hidden by text isn't "
     "clearly shown. If none clearly shows it, set has_product_photo false: "
@@ -1243,6 +1246,11 @@ class ProducerDecision(Judgement):
         description="One short sentence saying the selected size or pack and its price, "
         "any invented part, and any ordinary use the page doesn't describe. Empty if none.",
     )
+    plan_not_kept: str = Field(
+        default="",
+        description="Only with a chosen_plan: one short sentence saying what of it this plan "
+        "couldn't keep and why, for the shop owner. Empty when it keeps it all.",
+    )
 
 
 def producer_decision_for(
@@ -1482,7 +1490,14 @@ class PlanHandoff(Handoff):
     # In the order the planner reads them (#210 point 9): the moments first, then the
     # library's sheets (the call's pictures), then the rest.
     AFTER_IMAGES = frozenset(
-        {"video_transcripts", "page_text", "product_url", "target_seconds", "conversation"}
+        {
+            "video_transcripts",
+            "page_text",
+            "product_url",
+            "target_seconds",
+            "conversation",
+            "chosen_plan",
+        }
     )
 
     moments: str
@@ -1494,6 +1509,9 @@ class PlanHandoff(Handoff):
     target_seconds: int | None
     conversation: list[ChatMessage]
     photo_worry: str = ""
+    # The plan the shop owner picked on the plan card (spec #768), or "" for an ad planned
+    # without one.
+    chosen_plan: str = ""
 
 
 def check_opening_kind(number: int, kind: str) -> None:

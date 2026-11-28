@@ -229,6 +229,22 @@ class Message(models.Model):
         help_text="On code's notice that a pasted page was kept with too few photos: the page "
         "panel stays open for more photos until the shop owner answers. False otherwise.",
     )
+    plan_card = models.ForeignKey(
+        "jobs.PlanCard",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="On the producer's message showing a plan card: the card.",
+    )
+    answers_plan_card = models.ForeignKey(
+        "jobs.PlanCard",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="On the shop owner's answer to a plan card: the card it answers.",
+    )
     trace_id = models.CharField(
         max_length=32,
         blank=True,

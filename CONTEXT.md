@@ -91,6 +91,18 @@ _Avoid_: Version, copy, alternative
 One window of a scene agent's work, opened by the producer's instruction and the owner's checked quotes, with its own caps on starting-picture tries, end-picture tries and clips. It ends when a clip passes, the agent gives up or its clips run out. A later note opens another run in the same chat.
 _Avoid_: Session, fix, try
 
+**Plan card**:
+The card the producer shows in the chat once the page is read, holding 1 to 3 questions, one of them always which of 3 plans. Nothing is planned or made until the shop owner answers the newest one (ADR 0017). "Card" alone means the end card or a scene card.
+_Avoid_: Brief, form, questionnaire
+
+**Plan** (on a plan card):
+One of the 3 ideas for the ad on a plan card: its style, length, title, what it is built on, how it opens, and the buyer's doubt it answers. Not the scene-by-scene plan, which is written only once the card is answered.
+_Avoid_: Option, concept
+
+**Product option**:
+One of the versions a page sells under one listing (two stones, four colours, three sizes), in the page's own names. A page with two or more gets a question on the plan card asking which the ad is for, and the ad is then offered only that option's photos and those that show no single one. Not a **Variant**, which is a job.
+_Avoid_: Variant, version, SKU
+
 **Ad style**:
 How a job's ad is made: **person talking** (the default: a presenter speaks one line per scene) or **product shots** (silent scenes of the product, overlays and music, no presenter). The shop owner reads only those two labels.
 _Avoid_: Hero, format, template, mode

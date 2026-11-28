@@ -101,6 +101,12 @@ class ChooseAdStyle(Tool):
         if self.chosen_doubt not in self.doubts:
             raise Refused("chosen_doubt must be one of the doubts you named, word for word.")
         style = STYLES[self.style]
+        carded = ((job.chosen_plan or {}).get("plan") or {}).get("style")
+        if carded and carded != style and not self.owner_asked:
+            raise Refused(
+                f'the shop owner picked a "{AdStyle(carded).label}" plan on the plan card, so '
+                "that is the style unless they ask for another."
+            )
         pinned = call.session.pinned_ad_style
         if pinned and style != pinned:
             raise Refused(f'this chat makes "{AdStyle(pinned).label}" ads only. Choose that style.')
@@ -141,6 +147,7 @@ class PlanProductShots(Tool):
 
     name = "plan_product_shots"
     stops_ad_when_filter_blocks = True
+    waits_for_the_plan_card = True
 
     story: str = Field(min_length=1, description="The ad's story in one sentence.")
     built_on: str = Field(

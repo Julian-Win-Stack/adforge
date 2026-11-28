@@ -105,6 +105,10 @@ ONE_AD_AT_A_TIME = os.environ.get("ONE_AD_AT_A_TIME", "1").strip() != "0"
 # Planning checks always run, and so does the B-roll starting picture check, which nothing
 # switches off (Julian 15 Oct 14:53: "hardcode the check in the app to always turn it on").
 QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"
+# The plan card's lock (spec #768, agents/plan_card.py): nothing is planned or made until the
+# shop owner answers the plan card. Always on; only tests about something else turn it off,
+# as if every card were answered.
+PLAN_CARD_LOCK = True
 
 PRODUCER_HEARTBEAT_SECONDS = 30.0
 PRODUCER_DEAD_AFTER_SECONDS = 120.0

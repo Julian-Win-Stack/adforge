@@ -424,6 +424,7 @@ def test_the_planner_is_handed_the_page_text_the_target_the_library_count_and_th
         # The mug's page has no product videos, so none says anything.
         "video_transcripts": [],
         "photo_worry": "",
+        "chosen_plan": "",
     }
 
 

@@ -115,6 +115,13 @@ class Job(models.Model):
         'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
         "until Firecrawl has answered.",
     )
+    product_options = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The product options the page sells under this one listing (two stones, "
+        "four colours, three sizes), in the page's own names, as the photo picker named them "
+        "(#780). Two or more put the product-option question on the plan card.",
+    )
     colours = models.JSONField(
         default=list,
         blank=True,
@@ -224,6 +231,13 @@ class Job(models.Model):
         help_text="The target and scene lines kept longer after automatic shortenings; "
         "a changed script must fit its target again.",
     )
+    chosen_plan = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="What the shop owner chose on the plan card: the plan (style, seconds, "
+        "title, built on, opens, doubt) and their answer to each other question. Null until a "
+        "plan card is answered; the plan card's lock holds until then (agents/plan_card.py).",
+    )
     ad_style = models.CharField(
         max_length=20,
         choices=AdStyle.choices,
@@ -326,6 +340,12 @@ class ProductPhoto(models.Model):
     target = models.TextField(
         blank=True,
         help_text="In a line-up, where this product stands among the others; else blank.",
+    )
+    option = models.TextField(
+        blank=True,
+        default="",
+        help_text="The product option it shows, as the page names it (Job.product_options); "
+        "blank when it shows no single one, so it is usable for every option.",
     )
     label = models.TextField(
         blank=True,
@@ -448,6 +468,12 @@ class LibraryItem(models.Model):
     target = models.TextField(
         blank=True,
         help_text="For a line-up, the product's position in it, as long as the picker wrote it.",
+    )
+    option = models.TextField(
+        blank=True,
+        default="",
+        help_text="The product option it shows, as the page names it (Job.product_options); "
+        "blank when it shows no single one, so it is usable for every option.",
     )
     label = models.TextField(
         help_text="One free sentence for prompts and the planner. Code never parses it."
@@ -1653,6 +1679,39 @@ class AgentFixTry(models.Model):
 
     def __str__(self) -> str:
         return f"Try {self.number}"
+
+
+class PlanCard(models.Model):
+    """A plan card the producer showed the shop owner (spec #768): 1 to 3 questions, one of
+    them always which of 3 plans, each with the producer's pick. Nothing is made until the
+    newest card of a job is answered. A card is open until it is answered or a newer card
+    replaces it."""
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="plan_cards")
+    tool_call = models.OneToOneField(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="The producer's show_plan_card call.",
+    )
+    card = models.JSONField(
+        help_text="The card as the producer wrote it: its opening sentence and its questions, "
+        "each with its choices and the producer's pick (agents/plan_card.py:Card)."
+    )
+    answer = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The index of the choice the shop owner picked in each question, by the "
+        "question's key. Null while the card is open.",
+    )
+    answered_at = models.DateTimeField(null=True, blank=True)
+    replaced_at = models.DateTimeField(
+        null=True, blank=True, help_text="When a newer card replaced it; it then takes no answer."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"Plan card {self.pk}"
 
 
 class OwnerQuestion(models.Model):

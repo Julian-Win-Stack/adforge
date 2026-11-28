@@ -458,6 +458,13 @@ def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]
 
 
 @pytest.fixture(autouse=True)
+def _plan_card_lock(request: pytest.FixtureRequest, settings: Settings) -> None:
+    """Every ad runs as if its plan card were answered, unless the test is marked plan_card:
+    a test of something else scripts no card (agents/plan_card.py)."""
+    settings.PLAN_CARD_LOCK = request.node.get_closest_marker("plan_card") is not None
+
+
+@pytest.fixture(autouse=True)
 def _end_card_rules(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Notice every plan breaking the brand and end card rules (spec #401), unless the test
     is marked without_end_card_rules: its plans, written before the rules for another page or

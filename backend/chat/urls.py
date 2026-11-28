@@ -14,4 +14,5 @@ urlpatterns = [
     path("sessions/<uuid:session_id>/scenes/<int:scene>/use/", api.use_version),
     path("sessions/<uuid:session_id>/scenes/<int:scene>/check/", api.check_clip),
     path("sessions/<uuid:session_id>/warnings/", api.session_warnings),
+    path("sessions/<uuid:session_id>/plan-cards/<int:card_id>/answer/", api.answer_plan_card),
 ]

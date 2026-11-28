@@ -562,13 +562,14 @@ SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward th
 
 
 # The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the
-# usual order (updated by spec #303) unless the shop owner's words redirect it, and asks only
-# when the ad can't go on without them. Its instructions, pinned word for word.
+# usual order (updated by specs #303 and #768) unless the shop owner's words redirect it, and
+# asks only when the ad can't go on without them. Its instructions, pinned word for word.
 FIRST_MESSAGE_PATH = [
     pytest.param(
-        "The usual order is: read the page, plan the ad, create the person, run the planning "
-        "checks, create the music, and call start_scene_agent for every scene once its "
-        "presenter and checked line exist. Start all ready scenes together in one turn, "
+        "The usual order is: read the page, show the plan card and wait for its answer, plan "
+        "the ad, create the person, run the planning checks, create the music, and call "
+        "start_scene_agent for every scene once its presenter and checked line exist. Start "
+        "all ready scenes together in one turn, "
         "without waiting for one to finish before starting another. Give each scene your own "
         "instruction and exact chunks of the owner's messages in quotes. Code checks those "
         "quotes; if refused, quote their words exactly. The scene agent draws its starting "
@@ -588,9 +589,11 @@ def test_the_producers_first_message_path_is_in_its_instructions_word_for_word(
 
 
 def test_nothing_in_the_producers_instructions_waits_for_a_yes_before_making_the_ad() -> None:
-    # The old path showed a plan or the script and waited for the shop owner's yes.
+    # The old path showed a plan or the script and waited for the shop owner's yes. The plan
+    # card (spec #768) is the one thing the ad waits on: the owner picks a plan on it, and
+    # code, not a yes in the chat, lifts its lock.
     said = " ".join(PRODUCER_INSTRUCTIONS.split()).lower()
-    for waiting in ("shall i", "wait for their yes", "wait for a yes", "plan card", "yes button"):
+    for waiting in ("shall i", "wait for their yes", "wait for a yes", "yes button"):
         assert waiting not in said
 
 

@@ -12,7 +12,7 @@ from typing import Any
 from django.db.models import Sum
 from rest_framework.test import APIClient
 
-from agents import tasks
+from agents import plan_card, tasks
 from agents.models import ToolCall
 from chat.models import Message, Session
 from gateway.models import ModelCall
@@ -62,6 +62,21 @@ class Chat:
         assert sent.status_code == 201, sent.content
         self.run_held()
 
+    def answer_the_card(self) -> bool:
+        """Answer the open plan card with "Use the agent's picks", as the shop owner would,
+        then run every step it led to. Gives whether there was a card to answer."""
+        card = plan_card.open_card(self.session)
+        if card is None:
+            return False
+        sent = self.api.post(
+            f"/api/sessions/{self.session_id}/plan-cards/{card.pk}/answer/",
+            {"use_picks": True},
+            format="json",
+        )
+        assert sent.status_code == 201, sent.content
+        self.run_held()
+        return True
+
     def run_held(self) -> None:
         while self.held:
             tasks.run_scene_step(self.held.pop(0))
@@ -87,13 +102,15 @@ def speak_at(chat: Chat, words_per_second: float) -> None:
 
 def make_first_version(chat: Chat, link: str, answers: list[str], most_rounds: int = 20) -> None:
     """The shop owner sends the product's link and answers the producer, as round 4's owner
-    did, until the ad is shown: each question is answered with the next of `answers`, and
-    anything else with GO_AHEAD."""
+    did, until the ad is shown: the plan card with the agent's picks, each question with the
+    next of `answers`, and anything else with GO_AHEAD."""
     left = list(answers)
     text = link
     for _ in range(most_rounds):
         seq = chat.last_seq()
         chat.say(text)
+        while chat.answer_the_card():
+            pass
         if chat.finished_ads():
             return
         said = " ".join(m.text for m in chat.said_since(seq) if m.role == Message.Role.AGENT)

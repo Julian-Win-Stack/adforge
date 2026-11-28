@@ -22,6 +22,7 @@ so you can follow how the design changed.
 | [0014](0014-script-captions-without-word-check.md) | Nov 14 | Remove the clip word check; captions always show the script, timed from the transcript | |
 | [0015](0015-code-counts-tries-for-asked-changes.md) | Nov 24 | The producer identifies asked changes and code counts tries per scene | |
 | [0016](0016-producer-sees-the-product-photos.md) | Nov 27 | The producer is given the page text and sees the product photos as real pictures; looks stay for everything else | |
+| [0017](0017-plan-card-lock-is-code.md) | Nov 27 | Nothing is planned or made until the shop owner answers the plan card; code holds the lock, not the producer's instructions | |
 
 All dates are 2026. "Since" is when the page first appears in this repository. The repository's
 history starts on Oct 19, so a decision made before then shows "Oct 19 or earlier".
